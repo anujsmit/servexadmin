@@ -1,13 +1,45 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import useSWR from 'swr';
+import { useState, useEffect } from 'react';
 import {
-  Table, Input, Select, Button, Tag, Switch, Space, App, Tooltip,
-  Typography, Modal, Form, Row, Col,
+  Table,
+  Card,
+  Input,
+  Button,
+  Space,
+  Tag,
+  Avatar,
+  Modal,
+  Form,
+  Select,
+  Switch,
+  message,
+  Popconfirm,
+  Typography,
+  Row,
+  Col,
+  Statistic,
+  Tooltip,
+  Badge,
+  Dropdown,
 } from 'antd';
-import { SearchOutlined, EditOutlined } from '@ant-design/icons';
+import {
+  SearchOutlined,
+  ReloadOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  BanOutlined,
+  CheckOutlined,
+  PhoneOutlined,
+  MailOutlined,
+  MoreOutlined,
+  UserAddOutlined,
+  FilterOutlined,
+  ExportOutlined,
+} from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import dayjs from 'dayjs';
 import { api } from '../../../_lib/api';
 import styles from './users.module.css';
 
@@ -18,192 +50,473 @@ interface User {
   id: string;
   fullName: string;
   phoneNumber: string;
-  role: 'user' | 'mistri' | 'admin' | null;
+  role: 'user' | 'mistri' | 'admin';
   isActive: boolean;
   isOnboarded: boolean;
   createdAt: string;
+  updatedAt: string;
+  avatarUrl?: string;
+  defaultLocation?: string;
 }
 
 interface UsersResponse {
   success: boolean;
   users: User[];
-  pagination: { page: number; limit: number; total: number };
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+  };
 }
 
-const ROLE_COLOR: Record<string, string> = {
-  user: 'blue',
-  mistri: 'green',
-  admin: 'red',
-};
+interface UserFormData {
+  fullName: string;
+  phoneNumber: string;
+  role: 'user' | 'mistri' | 'admin';
+  isActive: boolean;
+}
 
 export default function UsersPage() {
-  const [search, setSearch] = useState('');
-  const [role, setRole] = useState<string>('');
-  const [page, setPage] = useState(1);
-  const [editUser, setEditUser] = useState<User | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
   const [form] = Form.useForm();
-  const { message } = App.useApp();
 
-  const buildKey = useCallback(() => {
-    const params = new URLSearchParams();
-    if (search) params.set('search', search);
-    if (role) params.set('role', role);
-    params.set('page', String(page));
-    params.set('limit', '20');
-    return `/api/admin/users?${params.toString()}`;
-  }, [search, role, page]);
-
-  const { data, error, isLoading, mutate } = useSWR<UsersResponse>(buildKey(), api.get);
-
-  const handleToggleActive = async (user: User) => {
+  // Fetch users
+  const fetchUsers = async (page = 1, pageSize = 20) => {
+    setLoading(true);
     try {
-      await api.patch(`/api/admin/users/${user.id}/toggle-active`);
-      message.success(`User ${user.isActive ? 'deactivated' : 'activated'}`);
-      mutate();
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Failed to update');
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: pageSize.toString(),
+      });
+      if (searchText) params.append('search', searchText);
+      if (roleFilter !== 'all') params.append('role', roleFilter);
+      
+      const response = await api.get<UsersResponse>(`/admin/users?${params}`);
+      
+      if (response.success) {
+        setUsers(response.users);
+        setPagination({
+          current: page,
+          pageSize,
+          total: response.pagination.total,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch users:', error);
+      message.error('Failed to load users');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const openEdit = (user: User) => {
-    setEditUser(user);
-    form.setFieldsValue({ fullName: user.fullName, role: user.role });
+  useEffect(() => {
+    fetchUsers();
+  }, [searchText, roleFilter]);
+
+  const handleTableChange = (newPagination: any) => {
+    fetchUsers(newPagination.current, newPagination.pageSize);
   };
 
-  const handleSave = async (values: { fullName: string; role: string }) => {
-    if (!editUser) return;
+  const handleCreateUser = () => {
+    setEditingUser(null);
+    form.resetFields();
+    form.setFieldsValue({ role: 'user', isActive: true });
+    setModalVisible(true);
+  };
+
+  const handleEditUser = (user: User) => {
+    setEditingUser(user);
+    form.setFieldsValue({
+      fullName: user.fullName,
+      phoneNumber: user.phoneNumber,
+      role: user.role,
+      isActive: user.isActive,
+    });
+    setModalVisible(true);
+  };
+
+  const handleSaveUser = async (values: UserFormData) => {
     try {
-      await api.patch(`/api/admin/users/${editUser.id}`, values);
-      message.success('User updated');
-      setEditUser(null);
-      mutate();
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Failed to update');
+      if (editingUser) {
+        await api.patch(`/admin/users/${editingUser.id}`, values);
+        message.success('User updated successfully');
+      } else {
+        await api.post('/admin/users', values);
+        message.success('User created successfully');
+      }
+      setModalVisible(false);
+      fetchUsers(pagination.current, pagination.pageSize);
+    } catch (error) {
+      console.error('Failed to save user:', error);
+      message.error('Failed to save user');
+    }
+  };
+
+  const handleToggleStatus = async (user: User) => {
+    try {
+      await api.patch(`/admin/users/${user.id}/toggle-active`);
+      message.success(`${user.fullName} has been ${user.isActive ? 'deactivated' : 'activated'}`);
+      fetchUsers(pagination.current, pagination.pageSize);
+    } catch (error) {
+      console.error('Failed to toggle user status:', error);
+      message.error('Failed to update user status');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      await api.del(`/admin/users/${userId}`);
+      message.success('User deleted successfully');
+      fetchUsers(pagination.current, pagination.pageSize);
+    } catch (error) {
+      console.error('Failed to delete user:', error);
+      message.error('Failed to delete user');
+    }
+  };
+
+  const getRoleColor = (role: string) => {
+    switch (role) {
+      case 'admin': return 'red';
+      case 'mistri': return 'green';
+      default: return 'blue';
+    }
+  };
+
+  const getRoleBadge = (role: string) => {
+    switch (role) {
+      case 'admin': return <Badge status="error" text="Admin" />;
+      case 'mistri': return <Badge status="success" text="Mistri" />;
+      default: return <Badge status="processing" text="Customer" />;
     }
   };
 
   const columns: ColumnsType<User> = [
     {
-      title: 'Name',
-      dataIndex: 'fullName',
-      key: 'fullName',
-      render: (name: string, row) => (
-        <div>
-          <Text strong>{name}</Text>
-          <br />
-          <Text type="secondary" style={{ fontSize: 12 }}>{row.phoneNumber}</Text>
-        </div>
+      title: 'User',
+      key: 'user',
+      width: 250,
+      render: (_, record) => (
+        <Space>
+          <Avatar 
+            src={record.avatarUrl} 
+            icon={<UserAddOutlined />}
+            style={{ backgroundColor: getRoleColor(record.role) }}
+          />
+          <div>
+            <Text strong>{record.fullName}</Text>
+            <br />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {record.phoneNumber}
+            </Text>
+          </div>
+        </Space>
       ),
     },
     {
       title: 'Role',
       dataIndex: 'role',
       key: 'role',
-      render: (r: string) =>
-        r ? <Tag color={ROLE_COLOR[r] ?? 'default'}>{r.toUpperCase()}</Tag> : <Text type="secondary">—</Text>,
+      width: 120,
+      render: (role: string) => (
+        <Tag color={getRoleColor(role)} style={{ textTransform: 'capitalize' }}>
+          {role}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Status',
+      dataIndex: 'isActive',
+      key: 'status',
+      width: 100,
+      render: (isActive: boolean) => (
+        <Badge 
+          status={isActive ? 'success' : 'error'} 
+          text={isActive ? 'Active' : 'Inactive'} 
+        />
+      ),
     },
     {
       title: 'Onboarded',
       dataIndex: 'isOnboarded',
-      key: 'isOnboarded',
-      render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? 'Yes' : 'No'}</Tag>,
-    },
-    {
-      title: 'Active',
-      key: 'isActive',
-      render: (_: unknown, row: User) => (
-        <Switch
-          checked={row.isActive}
-          size="small"
-          onChange={() => handleToggleActive(row)}
-        />
+      key: 'onboarded',
+      width: 100,
+      render: (isOnboarded: boolean) => (
+        <Tag icon={isOnboarded ? <CheckOutlined /> : <BanOutlined />} color={isOnboarded ? 'success' : 'default'}>
+          {isOnboarded ? 'Yes' : 'No'}
+        </Tag>
       ),
     },
     {
       title: 'Joined',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      render: (d: string) => new Date(d).toLocaleDateString(),
+      width: 180,
+      render: (date: string) => dayjs(date).format('DD MMM YYYY, HH:mm'),
     },
     {
-      title: '',
+      title: 'Actions',
       key: 'actions',
-      width: 60,
-      render: (_: unknown, row: User) => (
-        <Tooltip title="Edit">
-          <Button icon={<EditOutlined />} size="small" onClick={() => openEdit(row)} />
-        </Tooltip>
+      width: 120,
+      fixed: 'right',
+      render: (_, record) => (
+        <Space>
+          <Tooltip title="Edit User">
+            <Button 
+              type="text" 
+              icon={<EditOutlined />} 
+              onClick={() => handleEditUser(record)}
+            />
+          </Tooltip>
+          <Tooltip title={record.isActive ? 'Deactivate' : 'Activate'}>
+            <Button 
+              type="text" 
+              icon={record.isActive ? <BanOutlined /> : <CheckOutlined />}
+              onClick={() => handleToggleStatus(record)}
+              danger={record.isActive}
+            />
+          </Tooltip>
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: 'view-details',
+                  label: 'View Details',
+                  icon: <UserAddOutlined />,
+                  onClick: () => window.location.href = `/admin/users/${record.id}`,
+                },
+                {
+                  key: 'send-message',
+                  label: 'Send Message',
+                  icon: <MailOutlined />,
+                  onClick: () => message.info('Coming soon'),
+                },
+                {
+                  type: 'divider',
+                },
+                {
+                  key: 'delete',
+                  label: 'Delete User',
+                  icon: <DeleteOutlined />,
+                  danger: true,
+                  onClick: () => handleDeleteUser(record.id),
+                },
+              ],
+            }}
+            trigger={['click']}
+          >
+            <Button type="text" icon={<MoreOutlined />} />
+          </Dropdown>
+        </Space>
       ),
     },
   ];
 
+  // Calculate statistics
+  const stats = {
+    total: users.length,
+    active: users.filter(u => u.isActive).length,
+    inactive: users.filter(u => !u.isActive).length,
+    admins: users.filter(u => u.role === 'admin').length,
+    mistris: users.filter(u => u.role === 'mistri').length,
+    customers: users.filter(u => u.role === 'user').length,
+  };
+
   return (
-    <div>
+    <div className={styles.container}>
+      {/* Header */}
       <div className={styles.header}>
-        <Title level={4} style={{ margin: 0 }}>Users</Title>
-        <Text type="secondary">Manage all platform users</Text>
+        <Title level={2}>User Management</Title>
+        <Text type="secondary">Manage all users, their roles, and account status</Text>
       </div>
 
-      <div className={styles.filters}>
-        <Input
-          placeholder="Search by name or phone..."
-          prefix={<SearchOutlined />}
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          style={{ width: 280 }}
-          allowClear
+      {/* Statistics Cards */}
+      <Row gutter={16} className={styles.statsRow}>
+        <Col xs={24} sm={12} lg={4}>
+          <Card className={styles.statCard}>
+            <Statistic title="Total Users" value={pagination.total} prefix={<UserAddOutlined />} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={4}>
+          <Card className={styles.statCard}>
+            <Statistic title="Active" value={stats.active} valueStyle={{ color: '#3f8600' }} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={4}>
+          <Card className={styles.statCard}>
+            <Statistic title="Inactive" value={stats.inactive} valueStyle={{ color: '#cf1322' }} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={4}>
+          <Card className={styles.statCard}>
+            <Statistic title="Mistris" value={stats.mistris} prefix={<Badge status="success" />} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={4}>
+          <Card className={styles.statCard}>
+            <Statistic title="Customers" value={stats.customers} prefix={<Badge status="processing" />} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={4}>
+          <Card className={styles.statCard}>
+            <Statistic title="Admins" value={stats.admins} prefix={<Badge status="error" />} />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Filters and Actions */}
+      <Card className={styles.filterCard}>
+        <Row gutter={16} align="middle">
+          <Col xs={24} sm={12} md={8}>
+            <Input
+              placeholder="Search by name or phone"
+              prefix={<SearchOutlined />}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              allowClear
+            />
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Select
+              style={{ width: '100%' }}
+              value={roleFilter}
+              onChange={setRoleFilter}
+              placeholder="Filter by role"
+            >
+              <Option value="all">All Roles</Option>
+              <Option value="user">Customers</Option>
+              <Option value="mistri">Mistris</Option>
+              <Option value="admin">Admins</Option>
+            </Select>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Select
+              style={{ width: '100%' }}
+              value={statusFilter}
+              onChange={setStatusFilter}
+              placeholder="Filter by status"
+            >
+              <Option value="all">All Status</Option>
+              <Option value="active">Active</Option>
+              <Option value="inactive">Inactive</Option>
+            </Select>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Space wrap>
+              <Button 
+                icon={<ReloadOutlined />} 
+                onClick={() => fetchUsers()}
+              >
+                Refresh
+              </Button>
+              <Button 
+                type="primary" 
+                icon={<PlusOutlined />} 
+                onClick={handleCreateUser}
+              >
+                Add User
+              </Button>
+              <Button icon={<ExportOutlined />}>Export</Button>
+            </Space>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* Users Table */}
+      <Card className={styles.tableCard}>
+        <Table
+          columns={columns}
+          dataSource={users}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: pagination.total,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total) => `Total ${total} users`,
+          }}
+          onChange={handleTableChange}
+          scroll={{ x: 1000 }}
         />
-        <Select
-          placeholder="Filter by role"
-          value={role || undefined}
-          onChange={(v) => { setRole(v ?? ''); setPage(1); }}
-          style={{ width: 160 }}
-          allowClear
-        >
-          <Option value="user">Customer</Option>
-          <Option value="mistri">ServeX</Option>
-          <Option value="admin">Admin</Option>
-        </Select>
-      </div>
+      </Card>
 
-      <Table
-        columns={columns}
-        dataSource={data?.users ?? []}
-        loading={isLoading}
-        rowKey="id"
-        pagination={{
-          current: page,
-          pageSize: 20,
-          total: data?.pagination.total ?? 0,
-          onChange: setPage,
-          showTotal: (t) => `${t} users`,
-        }}
-        className={styles.table}
-        size="middle"
-      />
-
+      {/* Create/Edit User Modal */}
       <Modal
-        title="Edit User"
-        open={!!editUser}
-        onCancel={() => setEditUser(null)}
+        title={editingUser ? 'Edit User' : 'Add New User'}
+        open={modalVisible}
+        onCancel={() => setModalVisible(false)}
         footer={null}
-        destroyOnHidden
+        width={500}
       >
-        <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>
-          <Form.Item label="Full Name" name="fullName" rules={[{ required: true }]}>
-            <Input />
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSaveUser}
+        >
+          <Form.Item
+            name="fullName"
+            label="Full Name"
+            rules={[{ required: true, message: 'Please enter full name' }]}
+          >
+            <Input placeholder="Enter full name" size="large" />
           </Form.Item>
-          <Form.Item label="Role" name="role">
-            <Select>
+
+          <Form.Item
+            name="phoneNumber"
+            label="Phone Number"
+            rules={[
+              { required: true, message: 'Please enter phone number' },
+              { pattern: /^[6-9]\d{9}$/, message: 'Enter a valid 10-digit phone number' },
+            ]}
+          >
+            <Input 
+              placeholder="98XXXXXXXX" 
+              size="large" 
+              prefix={<PhoneOutlined />}
+              disabled={!!editingUser}
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="role"
+            label="Role"
+            rules={[{ required: true, message: 'Please select role' }]}
+          >
+            <Select size="large">
               <Option value="user">Customer</Option>
-              <Option value="mistri">ServeX</Option>
-              <Option value="admin">Admin</Option>
+              <Option value="mistri">Mistri (Service Provider)</Option>
+              <Option value="admin">Administrator</Option>
             </Select>
           </Form.Item>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <Button onClick={() => setEditUser(null)}>Cancel</Button>
-            <Button type="primary" htmlType="submit">Save</Button>
-          </div>
+
+          <Form.Item
+            name="isActive"
+            label="Status"
+            valuePropName="checked"
+          >
+            <Switch 
+              checkedChildren="Active" 
+              unCheckedChildren="Inactive" 
+              defaultChecked
+            />
+          </Form.Item>
+
+          <Form.Item>
+            <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+              <Button onClick={() => setModalVisible(false)}>Cancel</Button>
+              <Button type="primary" htmlType="submit">
+                {editingUser ? 'Update' : 'Create'} User
+              </Button>
+            </Space>
+          </Form.Item>
         </Form>
       </Modal>
     </div>

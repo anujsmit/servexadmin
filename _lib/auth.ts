@@ -1,67 +1,141 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
-const DEV_TOKEN_KEY = 'admin_dev_token';
-const IS_PROD = process.env.NODE_ENV === 'production';
+// app/_lib/auth.ts
 
-/**
- * Request an OTP for admin login. The backend checks the phone number
- * belongs to an admin account BEFORE sending — returns 403 otherwise.
- */
-export async function sendOtp(phone: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/admin/auth/send-otp`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ phone }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: 'Failed to send OTP' }));
-    throw new Error(err.message);
-  }
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+
+export interface AdminLoginResponse {
+  success: boolean;
+  requiresTwoFactor?: boolean;
+  user?: {
+    id: string;
+    fullName: string;
+    phoneNumber: string;
+    role: string;
+    twoFaEnabled: boolean;
+    staffRole: string;
+    permissions: string[];
+  };
+  token?: string;
+  backupCodes?: string[];
 }
 
-export async function verifyOtp(
-  phone: string,
-  otp: string
-): Promise<{ user: { role: string; fullName: string }; token?: string }> {
-  const res = await fetch(`${API_BASE}/api/admin/auth/verify-otp`, {
+// Admin login with password
+export const adminLoginWithPassword = async (
+  phone: string, 
+  password?: string, 
+  twoFactorToken?: string,
+  backupCode?: string
+): Promise<AdminLoginResponse> => {
+  const body: any = { phone };
+  if (password) body.password = password;
+  if (twoFactorToken) body.twoFactorToken = twoFactorToken;
+  if (backupCode) body.backupCode = backupCode;
+  
+  const response = await fetch(`${API_BASE}/admin/auth/login-with-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
     credentials: 'include',
-    body: JSON.stringify({ phone, otp }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: 'Invalid OTP' }));
-    throw new Error(err.message);
+
+  if (!response.ok) {
+    let errorMessage = 'Login failed';
+    try {
+      const error = await response.json();
+      errorMessage = error.message || errorMessage;
+    } catch (e) {
+      // If response is not JSON, get text
+      const text = await response.text();
+      console.error('Non-JSON response:', text.substring(0, 200));
+      errorMessage = `Server error: ${response.status}`;
+    }
+    throw new Error(errorMessage);
   }
-  const data = await res.json();
-  if (!IS_PROD && data?.token && typeof window !== 'undefined') {
-    localStorage.setItem(DEV_TOKEN_KEY, data.token);
+
+  const data = await response.json();
+  
+  if (data.user) {
+    localStorage.setItem('admin_user', JSON.stringify(data.user));
   }
+  
+  if (process.env.NODE_ENV !== 'production' && data.token) {
+    localStorage.setItem('admin_token', data.token);
+  }
+  
   return data;
-}
+};
 
-export async function clearSession(): Promise<void> {
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem(DEV_TOKEN_KEY);
+// Check if admin has 2FA enabled - FIXED with better error handling
+export const checkAdminTwoFactorStatus = async (phone: string): Promise<{ twoFactorEnabled: boolean }> => {
+  try {
+    console.log('Checking 2FA status for:', phone);
+    console.log('API URL:', `${API_BASE}/admin/auth/check-two-factor-status`);
+    
+    const response = await fetch(`${API_BASE}/admin/auth/check-two-factor-status`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ phone }),
+      credentials: 'include',
+    });
+
+    console.log('Response status:', response.status);
+
+    if (!response.ok) {
+      console.error('2FA check failed with status:', response.status);
+      return { twoFactorEnabled: false };
+    }
+
+    const data = await response.json();
+    console.log('2FA status response:', data);
+    return { twoFactorEnabled: data.twoFactorEnabled || false };
+  } catch (error) {
+    console.error('Error checking 2FA status:', error);
+    return { twoFactorEnabled: false };
   }
+};
 
-  await fetch(`${API_BASE}/api/admin/auth/logout`, {
-    method: 'POST',
-    credentials: 'include',
-  });
-}
+// Get current admin user
+export const getCurrentAdmin = async (): Promise<any> => {
+  try {
+    const token = localStorage.getItem('admin_token');
+    const response = await fetch(`${API_BASE}/admin/me`, {
+      credentials: 'include',
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+    });
 
-export async function checkSession(): Promise<boolean> {
-  const devToken = !IS_PROD && typeof window !== 'undefined'
-    ? localStorage.getItem(DEV_TOKEN_KEY)
-    : null;
+    if (!response.ok) {
+      if (response.status === 401) {
+        await adminLogout();
+      }
+      return null;
+    }
 
-  const res = await fetch(`${API_BASE}/api/admin/stats`, {
-    method: 'GET',
-    headers: devToken ? { Authorization: `Bearer ${devToken}` } : undefined,
-    credentials: 'include',
-    cache: 'no-store',
-  });
+    return await response.json();
+  } catch (error) {
+    console.error('Error getting current admin:', error);
+    return null;
+  }
+};
 
-  return res.ok;
-}
+// Admin logout
+export const adminLogout = async (): Promise<void> => {
+  try {
+    await fetch(`${API_BASE}/admin/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+  } finally {
+    localStorage.removeItem('admin_user');
+    localStorage.removeItem('admin_token');
+  }
+};
+
+// Clear session (alias for adminLogout)
+export const clearSession = adminLogout;
