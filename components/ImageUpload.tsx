@@ -1,8 +1,8 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Button, Spin, Typography, App } from 'antd';
-import { PlusOutlined, LoadingOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Button, Spin, Typography, App, Image } from 'antd';
+import { PlusOutlined, LoadingOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import { api } from '../_lib/api';
 
 const { Text } = Typography;
@@ -13,15 +13,13 @@ interface UploadResponse {
 }
 
 interface ImageUploadProps {
-  /** Current CDN URL value */
   value?: string | null;
-  /** Called with the new CDN URL after a successful upload, or null when cleared */
   onChange?: (url: string | null) => void;
-  /** Folder inside the "assets" Supabase bucket. Defaults to "misc" */
   folder?: string;
   disabled?: boolean;
-  /** Placeholder hint text */
   hint?: string;
+  onUploadStart?: () => void;
+  onUploadEnd?: () => void;
 }
 
 export default function ImageUpload({
@@ -29,10 +27,13 @@ export default function ImageUpload({
   onChange,
   folder = 'misc',
   disabled = false,
-  hint = 'Recommended: 1200×600px, JPG/PNG',
+  hint = 'Recommended: 1200×400px, JPG/PNG, max 2MB',
+  onUploadStart,
+  onUploadEnd,
 }: ImageUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const { message } = App.useApp();
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,31 +50,49 @@ export default function ImageUpload({
       return;
     }
 
+    // Show preview immediately
+    const localPreview = URL.createObjectURL(file);
+    setPreviewUrl(localPreview);
+
     setLoading(true);
+    onUploadStart?.();
+    
     try {
       const base64 = await readFileAsBase64(file);
-      const result = await api.post<UploadResponse>('/api/admin/upload', {
+      
+      const result = await api.post<UploadResponse>('/admin/upload', {
         fileBase64: base64,
         folder,
         fileName: file.name,
       });
+      
+      // Return the CDN URL
       onChange?.(result.cdnUrl);
-      message.success('Image uploaded to CDN');
+      message.success('Image uploaded successfully');
+      
+      // Clean up preview
+      URL.revokeObjectURL(localPreview);
+      setPreviewUrl(null);
     } catch (err) {
+      console.error('Upload error:', err);
       message.error(err instanceof Error ? err.message : 'Upload failed');
+      setPreviewUrl(null);
     } finally {
       setLoading(false);
+      onUploadEnd?.();
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const handleClear = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleClear = () => {
     onChange?.(null);
+    setPreviewUrl(null);
   };
 
+  const displayImage = previewUrl || value;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <input
         ref={fileInputRef}
         type="file"
@@ -83,43 +102,45 @@ export default function ImageUpload({
         disabled={disabled || loading}
       />
 
-      {value ? (
-        <div style={{ position: 'relative', display: 'inline-block' }}>
-          <img
-            src={value}
-            alt="uploaded"
-            style={{
-              width: '100%',
-              maxHeight: 160,
-              objectFit: 'cover',
-              borderRadius: 8,
-              border: '1px solid var(--color-border, #e5e7eb)',
-              display: 'block',
-            }}
-          />
-          {!disabled && (
-            <div
+      {displayImage ? (
+        <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+          <div style={{ position: 'relative' }}>
+            <Image
+              src={displayImage}
+              alt="uploaded banner"
               style={{
-                position: 'absolute',
-                top: 6,
-                right: 6,
-                display: 'flex',
-                gap: 4,
+                width: '100%',
+                maxHeight: 200,
+                objectFit: 'cover',
+                borderRadius: 8,
+                border: '1px solid #e5e7eb',
               }}
-            >
-              <Button
-                size="small"
-                onClick={() => fileInputRef.current?.click()}
-                loading={loading}
-              >
+              preview={{ mask: <EyeOutlined /> }}
+              fallback="https://placehold.co/600x200?text=Image+Load+Error"
+            />
+            {loading && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0,0,0,0.5)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 8,
+              }}>
+                <Spin indicator={<LoadingOutlined style={{ fontSize: 24, color: '#fff' }} spin />} />
+              </div>
+            )}
+          </div>
+          {!disabled && (
+            <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 8 }}>
+              <Button size="small" onClick={() => fileInputRef.current?.click()} disabled={loading}>
                 Change
               </Button>
-              <Button
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                onClick={handleClear}
-              />
+              <Button size="small" danger icon={<DeleteOutlined />} onClick={handleClear} disabled={loading} />
             </div>
           )}
         </div>
@@ -127,40 +148,30 @@ export default function ImageUpload({
         <div
           onClick={() => !disabled && !loading && fileInputRef.current?.click()}
           style={{
-            border: '1.5px dashed var(--color-border, #d9d9d9)',
-            borderRadius: 8,
-            padding: '24px 16px',
+            border: '2px dashed #d9d9d9',
+            borderRadius: 12,
+            padding: '32px 24px',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            gap: 8,
+            gap: 12,
             cursor: disabled || loading ? 'not-allowed' : 'pointer',
-            background: 'var(--color-bg-subtle, #fafafa)',
-            opacity: disabled ? 0.6 : 1,
-            transition: 'border-color 0.2s',
+            background: '#fafafa',
+            transition: 'all 0.3s ease',
           }}
         >
           {loading ? (
-            <Spin indicator={<LoadingOutlined style={{ fontSize: 24 }} spin />} />
+            <Spin indicator={<LoadingOutlined style={{ fontSize: 32 }} spin />} />
           ) : (
-            <PlusOutlined style={{ fontSize: 22, color: 'var(--color-text-muted, #9ca3af)' }} />
+            <PlusOutlined style={{ fontSize: 32, color: '#bfbfbf' }} />
           )}
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            {loading ? 'Uploading to CDN…' : 'Click to upload image'}
-          </Text>
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            {hint}
-          </Text>
+          <div style={{ textAlign: 'center' }}>
+            <Text strong style={{ display: 'block', marginBottom: 4 }}>
+              {loading ? 'Uploading to CDN...' : 'Click to upload image'}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{hint}</Text>
+          </div>
         </div>
-      )}
-
-      {value && (
-        <Text
-          type="secondary"
-          style={{ fontSize: 10, wordBreak: 'break-all', lineHeight: 1.4 }}
-        >
-          CDN: {value}
-        </Text>
       )}
     </div>
   );
@@ -171,7 +182,9 @@ function readFileAsBase64(file: File): Promise<string> {
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result as string;
-      resolve(result.split(',')[1]);
+      // Return only the base64 part (remove data:image/xxx;base64,)
+      const base64 = result.split(',')[1];
+      resolve(base64);
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);

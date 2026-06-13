@@ -29,7 +29,7 @@ import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
-  BanOutlined,
+  StopOutlined,
   CheckOutlined,
   PhoneOutlined,
   MailOutlined,
@@ -189,14 +189,6 @@ export default function UsersPage() {
     }
   };
 
-  const getRoleBadge = (role: string) => {
-    switch (role) {
-      case 'admin': return <Badge status="error" text="Admin" />;
-      case 'mistri': return <Badge status="success" text="Mistri" />;
-      default: return <Badge status="processing" text="Customer" />;
-    }
-  };
-
   const columns: ColumnsType<User> = [
     {
       title: 'User',
@@ -248,7 +240,7 @@ export default function UsersPage() {
       key: 'onboarded',
       width: 100,
       render: (isOnboarded: boolean) => (
-        <Tag icon={isOnboarded ? <CheckOutlined /> : <BanOutlined />} color={isOnboarded ? 'success' : 'default'}>
+        <Tag icon={isOnboarded ? <CheckOutlined /> : <StopOutlined />} color={isOnboarded ? 'success' : 'default'}>
           {isOnboarded ? 'Yes' : 'No'}
         </Tag>
       ),
@@ -277,7 +269,7 @@ export default function UsersPage() {
           <Tooltip title={record.isActive ? 'Deactivate' : 'Activate'}>
             <Button 
               type="text" 
-              icon={record.isActive ? <BanOutlined /> : <CheckOutlined />}
+              icon={record.isActive ? <StopOutlined /> : <CheckOutlined />}
               onClick={() => handleToggleStatus(record)}
               danger={record.isActive}
             />

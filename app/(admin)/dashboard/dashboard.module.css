@@ -118,3 +118,86 @@
   color: var(--color-text-primary);
   font-weight: 600;
 }
+.container {
+  padding: 0;
+}
+
+.header {
+  margin-bottom: 24px;
+}
+
+.header h2 {
+  margin-bottom: 8px;
+}
+
+.errorBanner {
+  margin-top: 12px;
+  padding: 10px 16px;
+  background: #fff2f0;
+  border: 1px solid #ffccc7;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.statsRow {
+  margin-bottom: 24px;
+}
+
+.statCard {
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.statCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.statTrend {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #52c41a;
+}
+
+.actionsCard {
+  margin-bottom: 24px;
+  border-radius: 12px;
+}
+
+.tableCard {
+  border-radius: 12px;
+  height: 100%;
+}
+
+.summaryCard {
+  margin-top: 24px;
+  border-radius: 12px;
+}
+
+.summaryItem {
+  text-align: center;
+}
+
+.summaryItem h3 {
+  margin: 8px 0;
+}
+
+.loadingContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .statsRow {
+    margin-bottom: 16px;
+  }
+  
+  .statCard :global(.ant-statistic-content) {
+    font-size: 20px;
+  }
+}

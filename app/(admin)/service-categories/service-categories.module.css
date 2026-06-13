@@ -1,13 +1,98 @@
-.header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: var(--space-6);
+.container {
+  padding: 0;
 }
 
-.table {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.tableCard {
+  border-radius: 12px;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+}
+
+.iconCell {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fa;
+  border-radius: 12px;
+}
+
+.iconPlaceholder {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.colorCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.colorDot {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.customIconPreview {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.customIconPreviewInner {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 12px;
+}
+
+.previewSection {
+  margin: 24px 0;
+  padding: 20px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #fff 100%);
+  border-radius: 16px;
+  border: 1px solid #f0f2f5;
+}
+
+.previewCard {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px;
+  background: #fff;
+  border-radius: 16px;
+  margin-top: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.previewIconPlaceholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modalFooter {
+  margin-top: 24px;
+  text-align: right;
 }

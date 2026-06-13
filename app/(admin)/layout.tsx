@@ -1,8 +1,8 @@
+// app/admin/layout.tsx - Update the MENU_ITEMS array
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
-import useSWR from 'swr';
-import { Layout, Menu, Avatar, Dropdown, Badge, Typography, Spin, message } from 'antd';
+import { useState, useEffect } from 'react';
+import { Layout, Menu, Avatar, Dropdown, Badge, Typography, Spin, App as AntdApp } from 'antd';
 import {
   DashboardOutlined,
   UserOutlined,
@@ -18,66 +18,65 @@ import {
   SettingOutlined,
   DollarOutlined,
   PieChartOutlined,
+  SendOutlined,
+  NotificationOutlined,
+  PlusCircleOutlined, // Add this icon
 } from '@ant-design/icons';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { getCurrentAdmin, adminLogout } from '../../_lib/auth';
 import { api } from '../../_lib/api';
-import { MISTRIS_COUNTS_GLOBAL_KEY, type MistriCountsPayload } from '../../_lib/mistris-counts';
 import styles from './layout.module.css';
 
 const { Sider, Header, Content } = Layout;
 const { Text } = Typography;
 
-/** Plain titles for header */
-const HEADER_TITLE_BY_PREFIX: { prefix: string; title: string }[] = [
-  { prefix: '/dashboard', title: 'Dashboard' },
-  { prefix: '/users', title: 'Users' },
-  { prefix: '/servex', title: 'ServeX' },
-  { prefix: '/service-categories', title: 'Service Categories' },
-  { prefix: '/platform-services', title: 'Platform Services' },
-  { prefix: '/hero-banners', title: 'Hero Banners' },
-  { prefix: '/ratings', title: 'Ratings' },
-  { prefix: '/service-requests', title: 'Service Requests' },
-  { prefix: '/audit-logs', title: 'Audit Logs' },
-  { prefix: '/sms-logs', title: 'SMS Logs' },
-  { prefix: '/expenses', title: 'Expenses' },
-  { prefix: '/payouts', title: 'Payouts' },
-  { prefix: '/analytics', title: 'Analytics' },
-  { prefix: '/broadcast', title: 'Broadcast' },
-  { prefix: '/employees', title: 'Employees' },
-  { prefix: '/settings', title: 'Settings' },
+// Menu configuration - ADD THE NEW MENU ITEM
+const MENU_ITEMS = [
+  { key: '/dashboard', icon: <DashboardOutlined />, label: 'Dashboard', path: '/dashboard' },
+  { key: '/users', icon: <UserOutlined />, label: 'Users', path: '/users' },
+  { key: '/servex', icon: <TeamOutlined />, label: 'ServeX (Mistris)', path: '/servex' },
+  { key: '/service-categories', icon: <AppstoreOutlined />, label: 'Service Categories', path: '/service-categories' },
+  { key: '/platform-services', icon: <ToolOutlined />, label: 'Platform Services', path: '/platform-services' },
+  { key: '/hero-banners', icon: <PictureOutlined />, label: 'Hero Banners', path: '/hero-banners' },
+  { key: '/ratings', icon: <StarOutlined />, label: 'Ratings', path: '/ratings' },
+  { key: '/service-requests', icon: <FileTextOutlined />, label: 'Service Requests', path: '/service-requests' },
+  // Add the new manual service request menu item
+  { key: '/manual-service-request', icon: <PlusCircleOutlined />, label: 'Manual Service', path: '/manual-service-request' },
+  { key: '/expenses', icon: <DollarOutlined />, label: 'Expenses', path: '/expenses' },
+  { key: '/payouts', icon: <DollarOutlined />, label: 'Payouts', path: '/payouts' },
+  { key: '/analytics', icon: <PieChartOutlined />, label: 'Analytics', path: '/analytics' },
+  { key: '/broadcast', icon: <SendOutlined />, label: 'Broadcast', path: '/broadcast' },
+  { key: '/audit-logs', icon: <AuditOutlined />, label: 'Audit Logs', path: '/audit-logs' },
+  { key: '/sms-logs', icon: <MessageOutlined />, label: 'SMS Logs', path: '/sms-logs' },
+  { key: '/employees', icon: <TeamOutlined />, label: 'Employees', path: '/employees' },
+  { key: '/settings', icon: <SettingOutlined />, label: 'Settings', path: '/settings' },
 ];
 
-function headerTitle(pathname: string): string {
-  const hit = HEADER_TITLE_BY_PREFIX.find((h) => pathname.startsWith(h.prefix));
-  return hit?.title ?? 'Admin';
-}
-
+// Rest of the layout component remains the same...
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [adminUser, setAdminUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
-  // Remove /admin prefix for matching
-  const currentPath = pathname.replace('/admin', '') || '/dashboard';
+  // Get current path without /admin prefix
+  const currentPath = '/' + (pathname.replace('/admin', '').split('/')[1] || 'dashboard');
+  const currentKey = '/' + (currentPath.split('/')[1] || 'dashboard');
 
-  const { data: mistriCounts } = useSWR<MistriCountsPayload>(MISTRIS_COUNTS_GLOBAL_KEY, api.get, {
-    refreshInterval: 60_000,
-    dedupingInterval: 5_000,
-  });
-  const pendingMistris = mistriCounts?.counts?.pending ?? 0;
-
-  // Load admin user on mount
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    
     const loadAdmin = async () => {
       try {
         const result = await getCurrentAdmin();
         if (!result?.me && !result?.user) {
-          // No user found, redirect to login
-          message.error('Session expired. Please login again.');
           router.push('/login');
           return;
         }
@@ -91,50 +90,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
     };
     loadAdmin();
-  }, [router]);
-
-  const navItems = useMemo(
-    () => [
-      { key: '/dashboard', icon: <DashboardOutlined />, label: 'Dashboard' },
-      { key: '/users', icon: <UserOutlined />, label: 'Users' },
-      {
-        key: '/servex',
-        icon: (
-          <Badge count={pendingMistris} size="small" offset={[-2, 2]} overflowCount={99}>
-            <TeamOutlined style={{ fontSize: 16 }} />
-          </Badge>
-        ),
-        label: 'ServeX (Mistris)',
-      },
-      { key: '/service-categories', icon: <AppstoreOutlined />, label: 'Service Categories' },
-      { key: '/platform-services', icon: <ToolOutlined />, label: 'Platform Services' },
-      { key: '/hero-banners', icon: <PictureOutlined />, label: 'Hero Banners' },
-      { key: '/ratings', icon: <StarOutlined />, label: 'Ratings' },
-      { key: '/service-requests', icon: <FileTextOutlined />, label: 'Service Requests' },
-      { key: '/expenses', icon: <DollarOutlined />, label: 'Expenses' },
-      { key: '/payouts', icon: <DollarOutlined />, label: 'Payouts' },
-      { key: '/analytics', icon: <PieChartOutlined />, label: 'Analytics' },
-      { key: '/broadcast', icon: <MessageOutlined />, label: 'Broadcast' },
-      { key: '/audit-logs', icon: <AuditOutlined />, label: 'Audit Logs' },
-      { key: '/sms-logs', icon: <MessageOutlined />, label: 'SMS Logs' },
-      { key: '/employees', icon: <TeamOutlined />, label: 'Employees' },
-      { key: '/settings', icon: <SettingOutlined />, label: 'Settings' },
-    ],
-    [pendingMistris]
-  );
+  }, [mounted, router]);
 
   const handleMenuClick = ({ key }: { key: string }) => {
-    router.push(`/admin${key}`);
+    const menuItem = MENU_ITEMS.find(item => item.key === key);
+    if (menuItem) {
+      router.push(menuItem.path);
+    }
   };
 
   const handleLogout = async () => {
     try {
       await adminLogout();
-      message.success('Logged out successfully');
       router.push('/login');
     } catch (error) {
       console.error('Logout error:', error);
-      message.error('Failed to logout');
     }
   };
 
@@ -162,13 +132,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         key: 'profile',
         icon: <UserOutlined />,
         label: 'My Profile',
-        onClick: () => router.push('/admin/profile'),
-      },
-      {
-        key: 'security',
-        icon: <SettingOutlined />,
-        label: 'Security Settings',
-        onClick: () => router.push('/admin/security'),
+        onClick: () => router.push('/profile'),
       },
       { type: 'divider' },
       {
@@ -181,6 +145,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     ],
   };
 
+  // Don't render anything on server-side
+  if (!mounted) {
+    return (
+      <div style={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        background: '#f0f2f5'
+      }}>
+        <div>Loading...</div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div style={{ 
@@ -190,68 +169,72 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         justifyContent: 'center',
         background: '#f0f2f5'
       }}>
-        <Spin size="large" tip="Loading dashboard..." />
+        <Spin size="large" />
       </div>
     );
   }
 
   if (!adminUser) {
-    return null; // Will redirect in useEffect
+    return null;
   }
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        width={260}
-        theme="dark"
-        className={styles.sider}
-      >
-        <div className={styles.siderLogo}>
-          <div className={styles.logoIcon}>
-            <Image src="/icon.png" alt="ServeX" width={36} height={36} priority />
-          </div>
-          {!collapsed && <span className={styles.logoText}>ServeX Admin</span>}
-        </div>
-
-        <Menu
+    <AntdApp>
+      <Layout style={{ minHeight: '100vh' }}>
+        <Sider
+          collapsible
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
+          width={260}
           theme="dark"
-          mode="inline"
-          selectedKeys={[currentPath]}
-          defaultSelectedKeys={['/dashboard']}
-          items={navItems}
-          onClick={handleMenuClick}
-          className={styles.menu}
-        />
-      </Sider>
-
-      <Layout>
-        <Header className={styles.header}>
-          <div className={styles.headerLeft}>
-            <div className={styles.collapseTrigger} onClick={() => setCollapsed(!collapsed)}>
-              {collapsed ? '☰' : '◀'}
+          className={styles.sider}
+        >
+          <div className={styles.siderLogo}>
+            <div className={styles.logoIcon}>
+              <Image src="/icon.png" alt="ServeX" width={36} height={36} priority />
             </div>
-            <Text className={styles.pageTitle}>{headerTitle(currentPath)}</Text>
+            {!collapsed && <span className={styles.logoText}>ServeX Admin</span>}
           </div>
-          <div className={styles.headerRight}>
-            <Dropdown menu={userMenu} trigger={['click']} placement="bottomRight">
-              <div className={styles.userInfo}>
-                <Avatar
-                  icon={<UserOutlined />}
-                  style={{ backgroundColor: '#2563eb', cursor: 'pointer' }}
-                />
-                <span className={styles.userName}>
-                  {adminUser.fullName?.split(' ')[0] || 'Admin'}
-                </span>
-              </div>
-            </Dropdown>
-          </div>
-        </Header>
 
-        <Content className={styles.content}>{children}</Content>
+          <Menu
+            theme="dark"
+            mode="inline"
+            selectedKeys={[currentKey]}
+            defaultSelectedKeys={['/dashboard']}
+            items={MENU_ITEMS}
+            onClick={handleMenuClick}
+            className={styles.menu}
+          />
+        </Sider>
+
+        <Layout>
+          <Header className={styles.header}>
+            <div className={styles.headerLeft}>
+              <div className={styles.collapseTrigger} onClick={() => setCollapsed(!collapsed)}>
+                {collapsed ? '☰' : '◀'}
+              </div>
+              <Text className={styles.pageTitle}>
+                {MENU_ITEMS.find(item => item.key === currentKey)?.label || 'Dashboard'}
+              </Text>
+            </div>
+            <div className={styles.headerRight}>
+              <Dropdown menu={userMenu} trigger={['click']} placement="bottomRight">
+                <div className={styles.userInfo}>
+                  <Avatar
+                    icon={<UserOutlined />}
+                    style={{ backgroundColor: '#2563eb', cursor: 'pointer' }}
+                  />
+                  <span className={styles.userName}>
+                    {adminUser.fullName?.split(' ')[0] || 'Admin'}
+                  </span>
+                </div>
+              </Dropdown>
+            </div>
+          </Header>
+
+          <Content className={styles.content}>{children}</Content>
+        </Layout>
       </Layout>
-    </Layout>
+    </AntdApp>
   );
 }

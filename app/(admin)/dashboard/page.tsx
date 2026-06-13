@@ -1,7 +1,7 @@
 'use client';
 
 import useSWR from 'swr';
-import { Card, Row, Col, Statistic, Typography, Skeleton, Alert } from 'antd';
+import { Card, Row, Col, Statistic, Typography, Skeleton, Alert, Button } from 'antd';
 import {
   UserOutlined,
   TeamOutlined,
@@ -9,7 +9,9 @@ import {
   StarOutlined,
   DollarOutlined,
   MessageOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
+import { useRouter } from 'next/navigation';
 import { api } from '../../../_lib/api';
 import styles from './dashboard.module.css';
 
@@ -35,7 +37,7 @@ const STAT_CARDS = [
   },
   {
     key: 'totalMistris' as keyof Stats,
-    label: 'ServeX',
+    label: 'ServeX (Mistris)',
     icon: <TeamOutlined />,
     color: '#059669',
     bg: '#d1fae5',
@@ -56,7 +58,7 @@ const STAT_CARDS = [
   },
   {
     key: 'totalRevenue' as keyof Stats,
-    label: 'Total Revenue (NPR)',
+    label: 'Total Revenue',
     icon: <DollarOutlined />,
     color: '#0891b2',
     bg: '#cffafe',
@@ -73,87 +75,216 @@ const STAT_CARDS = [
 ];
 
 export default function DashboardPage() {
-  const { data, error, isLoading } = useSWR<{ success: boolean; stats: Stats }>(
-    '/api/admin/stats',
-    api.get
+  const router = useRouter();
+  
+  // Fix: Use the correct endpoint (without /api prefix since api.get already includes it)
+  const { data, error, isLoading, mutate } = useSWR<{ success: boolean; stats: Stats }>(
+    '/admin/stats',
+    api.get,
+    {
+      refreshInterval: 30000, // Refresh every 30 seconds
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+    }
   );
 
   const stats = data?.stats;
 
-  return (
-    <div>
-      <div className={styles.header}>
-        <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
-        <Text type="secondary">Platform overview</Text>
-      </div>
+  const handleRetry = () => {
+    mutate();
+  };
 
-      {error && (
+  // Handle loading state
+  if (isLoading && !data) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.header}>
+          <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
+          <Text type="secondary">Platform overview</Text>
+        </div>
+        <Row gutter={[16, 16]}>
+          {STAT_CARDS.map((card) => (
+            <Col xs={24} sm={12} lg={8} xl={6} key={card.key}>
+              <Card className={styles.statCard} variant="borderless">
+                <div className={styles.statInner}>
+                  <div className={styles.statIcon} style={{ backgroundColor: card.bg, color: card.color }}>
+                    {card.icon}
+                  </div>
+                  <div className={styles.statValues}>
+                    <Skeleton active paragraph={false} title={{ width: 80 }} />
+                  </div>
+                </div>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </div>
+    );
+  }
+
+  // Handle error state
+  if (error) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.header}>
+          <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
+          <Text type="secondary">Platform overview</Text>
+        </div>
         <Alert
           type="error"
           message="Failed to load stats"
-          description={error.message}
+          description={error.message || 'Unable to fetch dashboard statistics. Please check your connection.'}
           style={{ marginBottom: 24 }}
+          action={
+            <Button size="small" type="primary" onClick={handleRetry} icon={<ReloadOutlined />}>
+              Retry
+            </Button>
+          }
         />
-      )}
-
-      <Row gutter={[16, 16]}>
-        {STAT_CARDS.map((card) => (
-          <Col xs={24} sm={12} lg={8} xl={6} key={card.key}>
-            <Card className={styles.statCard} variant="borderless">
-              <div className={styles.statInner}>
-                <div className={styles.statIcon} style={{ backgroundColor: card.bg, color: card.color }}>
-                  {card.icon}
+        <Row gutter={[16, 16]}>
+          {STAT_CARDS.map((card) => (
+            <Col xs={24} sm={12} lg={8} xl={6} key={card.key}>
+              <Card className={styles.statCard} variant="borderless">
+                <div className={styles.statInner}>
+                  <div className={styles.statIcon} style={{ backgroundColor: card.bg, color: card.color }}>
+                    {card.icon}
+                  </div>
+                  <div className={styles.statValues}>
+                    <span className={styles.statValue}>--</span>
+                    <span className={styles.statLabel}>{card.label}</span>
+                  </div>
                 </div>
-                {isLoading ? (
-                  <Skeleton active paragraph={false} title={{ width: 80 }} />
-                ) : (
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.container}>
+      <div className={styles.header}>
+        <div>
+          <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
+          <Text type="secondary">Platform overview</Text>
+        </div>
+        <Button 
+          icon={<ReloadOutlined />} 
+          onClick={handleRetry} 
+          loading={isLoading}
+        >
+          Refresh
+        </Button>
+      </div>
+
+      {/* Stats Cards */}
+      <Row gutter={[16, 16]}>
+        {STAT_CARDS.map((card) => {
+          const value = stats?.[card.key] ?? 0;
+          let displayValue: string | number = value;
+          
+          if (card.isMoney) {
+            displayValue = value.toLocaleString();
+          } else {
+            displayValue = value.toLocaleString();
+          }
+
+          return (
+            <Col xs={24} sm={12} lg={8} xl={6} key={card.key}>
+              <Card 
+                className={styles.statCard} 
+                variant="borderless"
+                hoverable
+                onClick={() => {
+                  // Navigate to relevant page on click
+                  if (card.key === 'totalCustomers') router.push('/admin/users?role=user');
+                  if (card.key === 'totalMistris') router.push('/admin/servex');
+                  if (card.key === 'pendingRequests') router.push('/admin/service-requests?status=pending');
+                  if (card.key === 'pendingRatings') router.push('/admin/ratings?filter=pending');
+                  if (card.key === 'totalRevenue') router.push('/admin/analytics');
+                  if (card.key === 'totalSmsSent') router.push('/admin/sms-logs');
+                }}
+              >
+                <div className={styles.statInner}>
+                  <div className={styles.statIcon} style={{ backgroundColor: card.bg, color: card.color }}>
+                    {card.icon}
+                  </div>
                   <div className={styles.statValues}>
                     <span className={styles.statValue}>
-                      {card.isMoney
-                        ? `NPR ${(stats?.[card.key] ?? 0).toLocaleString()}`
-                        : (stats?.[card.key] ?? 0).toLocaleString()}
+                      {card.isMoney ? `NPR ${displayValue}` : displayValue}
                     </span>
                     <span className={styles.statLabel}>{card.label}</span>
                   </div>
-                )}
-              </div>
-            </Card>
-          </Col>
-        ))}
+                </div>
+              </Card>
+            </Col>
+          );
+        })}
       </Row>
 
+      {/* Quick Actions & Platform Summary */}
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
         <Col xs={24} md={12}>
-          <Card title="Quick Actions" variant="borderless" className={styles.quickCard}>
+          <Card 
+            title="Quick Actions" 
+            variant="borderless" 
+            className={styles.quickCard}
+          >
             <div className={styles.quickActions}>
-              <a href="/ratings" className={styles.quickLink} style={{ '--accent': '#7c3aed' } as any}>
+              <div 
+                className={styles.quickLink} 
+                onClick={() => router.push('/admin/ratings?filter=pending')}
+                style={{ '--accent': '#7c3aed' } as any}
+              >
                 <StarOutlined />
                 <span>Review Pending Ratings</span>
                 {!isLoading && (stats?.pendingRatings ?? 0) > 0 && (
                   <span className={styles.badge}>{stats!.pendingRatings}</span>
                 )}
-              </a>
-              <a href="/users" className={styles.quickLink} style={{ '--accent': '#2563eb' } as any}>
+              </div>
+              <div 
+                className={styles.quickLink} 
+                onClick={() => router.push('/admin/users')}
+                style={{ '--accent': '#2563eb' } as any}
+              >
                 <UserOutlined />
                 <span>Manage Users</span>
-              </a>
-              <a href="/hero-banners" className={styles.quickLink} style={{ '--accent': '#059669' } as any}>
+              </div>
+              <div 
+                className={styles.quickLink} 
+                onClick={() => router.push('/admin/hero-banners')}
+                style={{ '--accent': '#059669' } as any}
+              >
                 <span>🖼</span>
                 <span>Edit Hero Banners</span>
-              </a>
-              <a href="/platform-services" className={styles.quickLink} style={{ '--accent': '#0891b2' } as any}>
+              </div>
+              <div 
+                className={styles.quickLink} 
+                onClick={() => router.push('/admin/platform-services')}
+                style={{ '--accent': '#0891b2' } as any}
+              >
                 <span>🔧</span>
                 <span>Manage Service Pricing</span>
-              </a>
-              <a href="/sms-logs" className={styles.quickLink} style={{ '--accent': '#be185d' } as any}>
+              </div>
+              <div 
+                className={styles.quickLink} 
+                onClick={() => router.push('/admin/sms-logs')}
+                style={{ '--accent': '#be185d' } as any}
+              >
                 <MessageOutlined />
                 <span>SMS Logs</span>
-              </a>
+              </div>
             </div>
           </Card>
         </Col>
+        
         <Col xs={24} md={12}>
-          <Card title="Platform Summary" variant="borderless" className={styles.quickCard}>
+          <Card 
+            title="Platform Summary" 
+            variant="borderless" 
+            className={styles.quickCard}
+          >
             {isLoading ? (
               <Skeleton active paragraph={{ rows: 4 }} />
             ) : (
@@ -173,6 +304,10 @@ export default function DashboardPage() {
                 <div className={styles.summaryRow}>
                   <span>Completed Revenue</span>
                   <strong>NPR {(stats?.totalRevenue ?? 0).toLocaleString()}</strong>
+                </div>
+                <div className={styles.summaryRow}>
+                  <span>SMS Credits Used</span>
+                  <strong>{(stats?.totalSmsSent ?? 0).toLocaleString()}</strong>
                 </div>
               </div>
             )}
