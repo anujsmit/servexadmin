@@ -3,11 +3,15 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 // Helper to get auth token
-const getAuthToken = (): string | null => {
-  // Try to get from localStorage first
+// Make sure you're sending the token correctly
+const getAuthToken = () => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('admin_token');
     if (token) return token;
+    
+    // Also check cookies
+    const cookieMatch = document.cookie.match(/admin_token=([^;]+)/);
+    if (cookieMatch) return cookieMatch[1];
   }
   return null;
 };

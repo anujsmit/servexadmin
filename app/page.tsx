@@ -1,3 +1,4 @@
+// app/page.tsx
 'use client';
 
 import { useEffect } from 'react';
@@ -8,15 +9,15 @@ export default function RootPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Check if admin is logged in
     const token = localStorage.getItem('admin_token');
     const user = localStorage.getItem('admin_user');
     
+    console.log('Root page - Token exists:', !!token);
+    console.log('Root page - User exists:', !!user);
+    
     if (token && user) {
-      // Redirect to admin dashboard
       router.replace('/dashboard');
     } else {
-      // Redirect to login page
       router.replace('/login');
     }
   }, [router]);
@@ -28,7 +29,7 @@ export default function RootPage() {
       alignItems: 'center', 
       height: '100vh' 
     }}>
-      <Spin size="large" tip="Redirecting to dashboard..." />
+      <Spin size="large" tip="Redirecting..." />
     </div>
   );
 }

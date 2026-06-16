@@ -104,7 +104,7 @@ export default function MistrisPage() {
     const p = new URLSearchParams({ page: String(page), limit: '20' });
     if (search) p.set('search', search);
     if (approvalFilter !== 'all') p.set('approvalStatus', approvalFilter);
-    return `/api/admin/mistris?${p.toString()}`;
+    return `/admin/mistris?${p.toString()}`;
   }, [search, page, approvalFilter]);
 
   const { data, isLoading, mutate } = useSWR<MistrisResponse>(listKey, api.get);
@@ -120,7 +120,7 @@ export default function MistrisPage() {
 
   const toggleFeatured = async (mistri: Mistri) => {
     try {
-      await api.patch(`/api/admin/mistris/${mistri.id}/toggle-featured`);
+      await api.patch(`/admin/mistris/${mistri.id}/toggle-featured`);
       message.success(mistri.isFeatured ? 'Removed from featured' : 'Marked as featured');
       await mutate();
     } catch (err: unknown) {
@@ -130,7 +130,7 @@ export default function MistrisPage() {
 
   const handleApprove = async (mistri: Mistri) => {
     try {
-      await api.patch(`/api/admin/mistris/${mistri.id}/approve`);
+      await api.patch(`/admin/mistris/${mistri.id}/approve`);
       message.success(`${mistri.fullName} approved`);
       await refreshListAndCounts();
     } catch (err: unknown) {
@@ -141,7 +141,7 @@ export default function MistrisPage() {
   const handleRejectSubmit = async () => {
     if (!rejectMistri) return;
     try {
-      await api.patch(`/api/admin/mistris/${rejectMistri.id}/reject`, { reason: rejectReason });
+      await api.patch(`/admin/mistris/${rejectMistri.id}/reject`, { reason: rejectReason });
       message.success(`${rejectMistri.fullName} rejected`);
       setRejectMistri(null);
       setRejectReason('');
@@ -159,7 +159,7 @@ export default function MistrisPage() {
   const handleServiceUpdate = async (values: { serviceId: number }) => {
     if (!editMistri) return;
     try {
-      await api.patch(`/api/admin/mistris/${editMistri.id}/update-service`, values);
+      await api.patch(`/admin/mistris/${editMistri.id}/update-service`, values);
       message.success('Service category updated');
       setEditMistri(null);
       await mutate();

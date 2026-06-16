@@ -20,6 +20,7 @@ import {
   Image,
   Tooltip,
   Spin,
+  Alert,
 } from 'antd';
 import {
   PlusOutlined,
@@ -27,6 +28,7 @@ import {
   DeleteOutlined,
   UploadOutlined,
   DeleteOutlined as DeleteIcon,
+  WarningOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../../_lib/api';
@@ -55,6 +57,7 @@ export default function ServiceCategoriesPage() {
   const [previewColor, setPreviewColor] = useState('#1890ff');
   const [uploading, setUploading] = useState(false);
   const [customIconUrl, setCustomIconUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
 
   const fetchCategories = async () => {
     setLoading(true);
@@ -80,13 +83,39 @@ export default function ServiceCategoriesPage() {
       reader.onload = async () => {
         try {
           setUploading(true);
-          const base64 = (reader.result as string).split(',')[1];
+          setImageError(false);
+          
+          // Validate file type
+          const validTypes = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'];
+          if (!validTypes.includes(file.type)) {
+            message.error('Please upload PNG, JPG, SVG, or WebP format');
+            setUploading(false);
+            reject(new Error('Invalid file type'));
+            return;
+          }
+
+          // Validate file size (2MB max)
+          if (file.size > 2 * 1024 * 1024) {
+            message.error('File must be 2MB or smaller');
+            setUploading(false);
+            reject(new Error('File too large'));
+            return;
+          }
+
+          // Compress image if it's not SVG
+          let base64 = (reader.result as string).split(',')[1];
+          if (file.type !== 'image/svg+xml') {
+            base64 = await compressImage(base64, file.type);
+          }
+          
           const response = await api.post('/admin/upload', {
             fileBase64: base64,
             folder: 'service-icons',
             fileName: file.name,
           });
+          
           setCustomIconUrl(response.cdnUrl);
+          setImageError(false);
           message.success('Icon uploaded successfully');
           resolve(response.cdnUrl);
         } catch (error) {
@@ -98,6 +127,54 @@ export default function ServiceCategoriesPage() {
       };
       reader.onerror = reject;
     });
+  };
+
+  // ✅ FIX: Use window.Image instead of antd Image
+  const compressImage = (base64: string, type: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const maxSize = 200;
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > height) {
+            if (width > maxSize) {
+              height = (maxSize / width) * height;
+              width = maxSize;
+            }
+          } else {
+            if (height > maxSize) {
+              width = (maxSize / height) * width;
+              height = maxSize;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, width, height);
+          }
+          resolve(canvas.toDataURL(type, 0.8).split(',')[1]);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      img.onerror = () => {
+        reject(new Error('Failed to load image for compression'));
+      };
+      img.src = `data:${type};base64,${base64}`;
+    });
+  };
+
+  const handleImageError = () => {
+    setImageError(true);
+    message.warning('Image could not be loaded. Please upload a valid image.');
   };
 
   const handleSave = async (values: any) => {
@@ -123,6 +200,7 @@ export default function ServiceCategoriesPage() {
       setModalVisible(false);
       form.resetFields();
       setCustomIconUrl(null);
+      setImageError(false);
       fetchCategories();
     } catch (error) {
       console.error('Failed to save category:', error);
@@ -152,7 +230,19 @@ export default function ServiceCategoriesPage() {
             <img 
               src={record.customIconUrl} 
               alt={record.serviceName}
-              style={{ width: 40, height: 40, objectFit: 'contain' }}
+              style={{ width: 44, height: 44, objectFit: 'contain' }}
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                // Show fallback on error
+                const parent = e.currentTarget.parentElement;
+                if (parent) {
+                  const fallback = document.createElement('div');
+                  fallback.className = styles.iconPlaceholder;
+                  fallback.style.backgroundColor = `${record.iconColor || '#1890ff'}20`;
+                  fallback.innerHTML = `<span style="color: ${record.iconColor || '#1890ff'}; font-size: 20px;">${record.serviceName?.charAt(0).toUpperCase()}</span>`;
+                  parent.appendChild(fallback);
+                }
+              }}
             />
           ) : (
             <div 
@@ -167,13 +257,25 @@ export default function ServiceCategoriesPage() {
         </div>
       ),
     },
-    { title: 'Service Name', dataIndex: 'serviceName', key: 'name', width: 200 },
-    { title: 'Description', dataIndex: 'description', key: 'description', ellipsis: true },
+    { 
+      title: 'Service Name', 
+      dataIndex: 'serviceName', 
+      key: 'name', 
+      width: 200,
+      render: (name: string) => <Text strong>{name}</Text>
+    },
+    { 
+      title: 'Description', 
+      dataIndex: 'description', 
+      key: 'description', 
+      ellipsis: true,
+      render: (desc: string) => desc || <Text type="secondary">No description</Text>
+    },
     {
       title: 'Color',
       dataIndex: 'iconColor',
       key: 'color',
-      width: 100,
+      width: 120,
       render: (color: string) => (
         <div className={styles.colorCell}>
           <div className={styles.colorDot} style={{ backgroundColor: color }} />
@@ -195,34 +297,40 @@ export default function ServiceCategoriesPage() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 120,
+      width: 140,
+      fixed: 'right',
       render: (_, record) => (
         <Space>
-          <Button 
-            icon={<EditOutlined />} 
-            onClick={() => {
-              setEditingCategory(record);
-              setCustomIconUrl(record.customIconUrl);
-              form.setFieldsValue({
-                serviceName: record.serviceName,
-                description: record.description,
-                mapIconColor: record.iconColor || '#1890ff',
-                isActive: record.isActive,
-              });
-              setPreviewColor(record.iconColor || '#1890ff');
-              setModalVisible(true);
-            }} 
-          />
-          <Popconfirm 
-            title="Delete Category" 
-            description={`Are you sure you want to delete "${record.serviceName}"?`}
-            onConfirm={() => handleDelete(record.id)}
-            okText="Delete"
-            cancelText="Cancel"
-            okButtonProps={{ danger: true }}
-          >
-            <Button danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          <Tooltip title="Edit Category">
+            <Button 
+              icon={<EditOutlined />} 
+              onClick={() => {
+                setEditingCategory(record);
+                setCustomIconUrl(record.customIconUrl);
+                setImageError(false);
+                form.setFieldsValue({
+                  serviceName: record.serviceName,
+                  description: record.description,
+                  mapIconColor: record.iconColor || '#1890ff',
+                  isActive: record.isActive,
+                });
+                setPreviewColor(record.iconColor || '#1890ff');
+                setModalVisible(true);
+              }} 
+            />
+          </Tooltip>
+          <Tooltip title="Delete Category">
+            <Popconfirm 
+              title="Delete Category" 
+              description={`Are you sure you want to delete "${record.serviceName}"?`}
+              onConfirm={() => handleDelete(record.id)}
+              okText="Delete"
+              cancelText="Cancel"
+              okButtonProps={{ danger: true }}
+            >
+              <Button danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          </Tooltip>
         </Space>
       ),
     },
@@ -241,6 +349,7 @@ export default function ServiceCategoriesPage() {
           onClick={() => {
             setEditingCategory(null);
             setCustomIconUrl(null);
+            setImageError(false);
             form.resetFields();
             form.setFieldsValue({ 
               isActive: true, 
@@ -260,7 +369,11 @@ export default function ServiceCategoriesPage() {
           dataSource={categories}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `Total ${total} categories` }}
+          pagination={{ 
+            pageSize: 10, 
+            showSizeChanger: true, 
+            showTotal: (total) => `Total ${total} categories` 
+          }}
         />
       </Card>
 
@@ -270,10 +383,11 @@ export default function ServiceCategoriesPage() {
         onCancel={() => {
           setModalVisible(false);
           setCustomIconUrl(null);
+          setImageError(false);
           form.resetFields();
         }}
         footer={null}
-        width={600}
+        width={700}
         destroyOnClose
       >
         <Form 
@@ -298,16 +412,35 @@ export default function ServiceCategoriesPage() {
                 label="Icon Color"
                 rules={[{ required: true, message: 'Please select icon color' }]}
               >
-                <input 
-                  type="color" 
-                  value={previewColor}
-                  onChange={(e) => {
-                    const color = e.target.value;
-                    setPreviewColor(color);
-                    form.setFieldsValue({ mapIconColor: color });
-                  }}
-                  style={{ width: '100%', height: 40, borderRadius: 8, cursor: 'pointer' }}
-                />
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <input 
+                    type="color" 
+                    value={previewColor}
+                    onChange={(e) => {
+                      const color = e.target.value;
+                      setPreviewColor(color);
+                      form.setFieldsValue({ mapIconColor: color });
+                    }}
+                    style={{ 
+                      width: 60, 
+                      height: 40, 
+                      borderRadius: 8, 
+                      cursor: 'pointer',
+                      border: '1px solid #e2e8f0',
+                      padding: 2,
+                    }}
+                  />
+                  <Input 
+                    value={previewColor}
+                    onChange={(e) => {
+                      const color = e.target.value;
+                      setPreviewColor(color);
+                      form.setFieldsValue({ mapIconColor: color });
+                    }}
+                    placeholder="#000000"
+                    style={{ width: 120 }}
+                  />
+                </div>
               </Form.Item>
             </Col>
           </Row>
@@ -318,7 +451,7 @@ export default function ServiceCategoriesPage() {
 
           <Form.Item label="Category Icon" required>
             <Upload.Dragger
-              accept="image/png,image/jpeg,image/svg+xml"
+              accept="image/png,image/jpeg,image/svg+xml,image/webp"
               showUploadList={false}
               customRequest={({ file, onSuccess }) => {
                 handleCustomIconUpload(file as File).then(onSuccess);
@@ -326,26 +459,65 @@ export default function ServiceCategoriesPage() {
               style={{ borderRadius: 12 }}
             >
               <p className="ant-upload-drag-icon">
-                <UploadOutlined />
+                <UploadOutlined style={{ color: '#e67e22' }} />
               </p>
               <p className="ant-upload-text">Click or drag file to upload</p>
               <p className="ant-upload-hint">
-                Support for PNG, JPG, SVG. Recommended size: 64x64px
+                Support for PNG, JPG, SVG, WebP. Max size: 2MB
               </p>
             </Upload.Dragger>
             
             {customIconUrl && (
               <div className={styles.customIconPreview}>
                 <div className={styles.customIconPreviewInner}>
-                  <Image src={customIconUrl} width={80} height={80} style={{ objectFit: 'contain' }} />
-                  <Button 
-                    danger 
-                    icon={<DeleteIcon />} 
-                    size="small" 
-                    onClick={() => setCustomIconUrl(null)}
-                  >
-                    Remove
-                  </Button>
+                  <div style={{ position: 'relative' }}>
+                    <img 
+                      src={customIconUrl} 
+                      alt="Category icon" 
+                      style={{ 
+                        width: 80, 
+                        height: 80, 
+                        objectFit: 'contain',
+                        borderRadius: 8,
+                        border: '1px solid #e8edf2',
+                        padding: 8,
+                        background: '#ffffff',
+                      }}
+                      onError={handleImageError}
+                    />
+                    {imageError && (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: -8,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: '#ff4d4f',
+                        color: '#fff',
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        fontSize: 10,
+                        whiteSpace: 'nowrap',
+                      }}>
+                        <WarningOutlined /> Invalid format
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {imageError ? 'Please re-upload a valid image' : 'Icon uploaded successfully'}
+                    </Text>
+                    <Button 
+                      danger 
+                      icon={<DeleteIcon />} 
+                      size="small" 
+                      onClick={() => {
+                        setCustomIconUrl(null);
+                        setImageError(false);
+                      }}
+                    >
+                      Remove Icon
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -359,11 +531,12 @@ export default function ServiceCategoriesPage() {
           <div className={styles.previewSection}>
             <Text strong>Live Preview (How it appears on mobile app)</Text>
             <div className={styles.previewCard}>
-              {customIconUrl ? (
+              {customIconUrl && !imageError ? (
                 <img 
                   src={customIconUrl} 
                   alt="preview"
                   style={{ width: 48, height: 48, objectFit: 'contain' }}
+                  onError={handleImageError}
                 />
               ) : (
                 <div 
@@ -392,6 +565,7 @@ export default function ServiceCategoriesPage() {
               <Button onClick={() => {
                 setModalVisible(false);
                 setCustomIconUrl(null);
+                setImageError(false);
                 form.resetFields();
               }}>
                 Cancel

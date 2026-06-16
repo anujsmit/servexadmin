@@ -19,60 +19,31 @@ export interface AdminLoginResponse {
 }
 
 // Admin login with password
-export const adminLoginWithPassword = async (
-  phone: string, 
-  password?: string, 
-  twoFactorToken?: string,
-  backupCode?: string
-): Promise<AdminLoginResponse> => {
-  const body: any = { phone };
-  if (password) body.password = password;
-  if (twoFactorToken) body.twoFactorToken = twoFactorToken;
-  if (backupCode) body.backupCode = backupCode;
-  
-  const response = await fetch(`${API_BASE}/admin/auth/login-with-password`, {
+export async function adminLoginWithPassword(phone: string, password: string, twoFactorToken?: string, backupCode?: string) {
+  const response = await fetch(`${API_BASE}/admin/auth/login-with-password`, {  // Changed to match backend route
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone, password, twoFactorToken, backupCode }),
+    credentials: 'include', // Important for cookies
   });
-
-  if (!response.ok) {
-    let errorMessage = 'Login failed';
-    try {
-      const error = await response.json();
-      errorMessage = error.message || errorMessage;
-    } catch (e) {
-      // If response is not JSON, get text
-      const text = await response.text();
-      console.error('Non-JSON response:', text.substring(0, 200));
-      errorMessage = `Server error: ${response.status}`;
-    }
-    throw new Error(errorMessage);
-  }
-
+  
   const data = await response.json();
+  console.log('Login response:', { status: response.status, data }); // Debug log
   
-  if (data.user) {
-    localStorage.setItem('admin_user', JSON.stringify(data.user));
-  }
-  
-  if (process.env.NODE_ENV !== 'production' && data.token) {
-    localStorage.setItem('admin_token', data.token);
+  if (!response.ok) {
+    throw new Error(data.message || 'Login failed');
   }
   
   return data;
-};
+}
 
-// Check if admin has 2FA enabled - FIXED with better error handling
+
+// Check if admin has 2FA enabled
 export const checkAdminTwoFactorStatus = async (phone: string): Promise<{ twoFactorEnabled: boolean }> => {
   try {
     console.log('Checking 2FA status for:', phone);
-    console.log('API URL:', `${API_BASE}/admin/auth/check-two-factor-status`);
     
-    const response = await fetch(`${API_BASE}/admin/auth/check-two-factor-status`, {
+    const response = await fetch(`${API_BASE}/admin/auth/check-two-factor-status`, {  // This one is correct
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -81,15 +52,12 @@ export const checkAdminTwoFactorStatus = async (phone: string): Promise<{ twoFac
       credentials: 'include',
     });
 
-    console.log('Response status:', response.status);
-
     if (!response.ok) {
       console.error('2FA check failed with status:', response.status);
       return { twoFactorEnabled: false };
     }
 
     const data = await response.json();
-    console.log('2FA status response:', data);
     return { twoFactorEnabled: data.twoFactorEnabled || false };
   } catch (error) {
     console.error('Error checking 2FA status:', error);
@@ -101,15 +69,19 @@ export const checkAdminTwoFactorStatus = async (phone: string): Promise<{ twoFac
 export const getCurrentAdmin = async (): Promise<any> => {
   try {
     const token = localStorage.getItem('admin_token');
+    console.log('Getting current admin, token exists:', !!token);
+    
     const response = await fetch(`${API_BASE}/admin/me`, {
       credentials: 'include',
       headers: {
         'Authorization': token ? `Bearer ${token}` : '',
+        'Content-Type': 'application/json',
       },
     });
 
     if (!response.ok) {
       if (response.status === 401) {
+        console.log('Token expired, logging out');
         await adminLogout();
       }
       return null;
@@ -125,15 +97,20 @@ export const getCurrentAdmin = async (): Promise<any> => {
 // Admin logout
 export const adminLogout = async (): Promise<void> => {
   try {
+    const token = localStorage.getItem('admin_token');
     await fetch(`${API_BASE}/admin/auth/logout`, {
       method: 'POST',
       credentials: 'include',
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
     });
   } catch (error) {
     console.error('Logout error:', error);
   } finally {
     localStorage.removeItem('admin_user');
     localStorage.removeItem('admin_token');
+    console.log('Cleared admin session');
   }
 };
 

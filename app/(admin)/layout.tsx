@@ -35,7 +35,6 @@ const { Text } = Typography;
 const MENU_ITEMS = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: 'Dashboard', path: '/dashboard' },
   { key: '/pending-requests', icon: <ClockCircleOutlined />, label: 'Pending Requests', path: '/pending-requests' },
-  { key: '/manual-assign', icon: <PlusOutlined />, label: 'Manual Assign', path: '/manual-assign' },
   { key: '/users', icon: <UserOutlined />, label: 'Users', path: '/users' },
   { key: '/servex', icon: <TeamOutlined />, label: 'ServeX (Mistris)', path: '/servex' },
   { key: '/service-categories', icon: <AppstoreOutlined />, label: 'Service Categories', path: '/service-categories' },
@@ -43,14 +42,8 @@ const MENU_ITEMS = [
   { key: '/hero-banners', icon: <PictureOutlined />, label: 'Hero Banners', path: '/hero-banners' },
   { key: '/ratings', icon: <StarOutlined />, label: 'Ratings', path: '/ratings' },
   { key: '/service-requests', icon: <FileTextOutlined />, label: 'Service Requests', path: '/service-requests' },
-  { key: '/expenses', icon: <DollarOutlined />, label: 'Expenses', path: '/expenses' },
-  { key: '/payouts', icon: <DollarOutlined />, label: 'Payouts', path: '/payouts' },
-  { key: '/analytics', icon: <PieChartOutlined />, label: 'Analytics', path: '/analytics' },
-  { key: '/broadcast', icon: <SendOutlined />, label: 'Broadcast', path: '/broadcast' },
   { key: '/audit-logs', icon: <AuditOutlined />, label: 'Audit Logs', path: '/audit-logs' },
   { key: '/sms-logs', icon: <MessageOutlined />, label: 'SMS Logs', path: '/sms-logs' },
-  { key: '/employees', icon: <TeamOutlined />, label: 'Employees', path: '/employees' },
-  { key: '/settings', icon: <SettingOutlined />, label: 'Settings', path: '/settings' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

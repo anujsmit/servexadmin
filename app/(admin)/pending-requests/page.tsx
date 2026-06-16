@@ -24,28 +24,33 @@ import {
   Statistic,
   Badge,
   Avatar,
-  List,
   Divider,
+  Tooltip,
+  theme,
 } from 'antd';
-import { 
-  CheckOutlined, 
-  CloseOutlined, 
-  ReloadOutlined, 
-  DollarOutlined, 
+import {
+  CheckOutlined,
+  CloseOutlined,
+  ReloadOutlined,
+  DollarOutlined,
   UserOutlined,
   EnvironmentOutlined,
   PhoneOutlined,
   ClockCircleOutlined,
-  EyeOutlined,
   TeamOutlined,
   WarningOutlined,
   CheckCircleOutlined,
-  PlusOutlined,
+  StarOutlined,
+  CalendarOutlined,
+  CarOutlined,
+  EyeOutlined,
+  UnorderedListOutlined,
 } from '@ant-design/icons';
 import { api } from '../../../_lib/api';
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
+const { useToken } = theme;
 
 // Types
 interface PendingRequest {
@@ -60,6 +65,8 @@ interface PendingRequest {
   customerName: string;
   customerPhone: string;
   status?: string;
+  assignedMistriId?: string;
+  mistriName?: string;
 }
 
 interface Mistri {
@@ -67,13 +74,13 @@ interface Mistri {
   fullName: string;
   phoneNumber: string;
   serviceId: number | null;
+  serviceName?: string;
   profilePhotoUrl: string | null;
   isAvailable: boolean;
   availabilityStatus: string;
   averageRating: string | null;
   jobsCompleted: number | null;
   currentJobs?: number;
-  serviceName?: string;
 }
 
 interface AssignedRequest {
@@ -87,7 +94,11 @@ interface AssignedRequest {
   completedAt: string | null;
   customerName: string;
   customerPhone: string;
+  assignedMistriId?: string;
   mistriName: string | null;
+  mistriPhone?: string;
+  mistriRating?: string;
+  mistriJobs?: number;
 }
 
 interface RequestDetails extends PendingRequest {
@@ -103,16 +114,29 @@ interface WorkerStats {
   availableWorkers: number;
   busyWorkers: number;
   totalIncompleteJobs: number;
-  workersWithJobs: Array<{
-    id: string;
-    name: string;
-    phone: string;
-    activeJobs: number;
-    rating: string;
-  }>;
 }
 
+interface AssignedMistriDetails {
+  id: string;
+  fullName: string;
+  phoneNumber: string;
+  averageRating: string | null;
+  jobsCompleted: number | null;
+  profilePhotoUrl: string | null;
+}
+
+// Service ID mapping (based on your database)
+const SERVICE_NAME_TO_ID: Record<string, number> = {
+  'plumber': 1,
+  'electrician': 2,
+  'painter': 3,
+  'cleaning': 4,
+  'carpenter': 5,
+  'ac_repair': 6,
+};
+
 export default function PendingRequestsPage() {
+  const { token } = useToken();
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [allRequests, setAllRequests] = useState<AssignedRequest[]>([]);
   const [loading, setLoading] = useState(false);
@@ -120,6 +144,7 @@ export default function PendingRequestsPage() {
   const [selectedRequest, setSelectedRequest] = useState<PendingRequest | null>(null);
   const [requestDetails, setRequestDetails] = useState<RequestDetails | null>(null);
   const [mistris, setMistris] = useState<Mistri[]>([]);
+  const [filteredMistris, setFilteredMistris] = useState<Mistri[]>([]);
   const [selectedMistri, setSelectedMistri] = useState<string>('');
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [adminNotes, setAdminNotes] = useState('');
@@ -129,14 +154,16 @@ export default function PendingRequestsPage() {
   const [activeTab, setActiveTab] = useState('pending');
   const [pagination, setPagination] = useState({ page: 1, total: 0, limit: 20 });
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [viewDetailsModalVisible, setViewDetailsModalVisible] = useState(false);
+  const [selectedAssignedRequest, setSelectedAssignedRequest] = useState<AssignedRequest | null>(null);
+  const [assignedMistriDetails, setAssignedMistriDetails] = useState<AssignedMistriDetails | null>(null);
+  const [loadingMistriDetails, setLoadingMistriDetails] = useState(false);
   const [workerStats, setWorkerStats] = useState<WorkerStats>({
     totalWorkers: 0,
     availableWorkers: 0,
     busyWorkers: 0,
     totalIncompleteJobs: 0,
-    workersWithJobs: [],
   });
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
   useEffect(() => {
     loadPendingRequests();
@@ -154,36 +181,22 @@ export default function PendingRequestsPage() {
       const mistrisResponse = await api.get('/admin/available-mistris?limit=100');
       if (mistrisResponse.success) {
         const allMistris = mistrisResponse.mistris || [];
-        
-        const workersWithJobsData = [];
         let totalIncomplete = 0;
-        
+
         for (const mistri of allMistris) {
           try {
             const jobsResponse = await api.get(`/admin/mistri-jobs/${mistri.id}?status=assigned`);
-            const activeJobs = jobsResponse.success ? (jobsResponse.count || 0) : 0;
-            totalIncomplete += activeJobs;
-            
-            if (activeJobs > 0) {
-              workersWithJobsData.push({
-                id: mistri.id,
-                name: mistri.fullName,
-                phone: mistri.phoneNumber,
-                activeJobs: activeJobs,
-                rating: mistri.averageRating || 'N/A',
-              });
-            }
+            totalIncomplete += jobsResponse.success ? (jobsResponse.count || 0) : 0;
           } catch (error) {
             console.error(`Failed to get jobs for mistri ${mistri.id}:`, error);
           }
         }
-        
+
         setWorkerStats({
           totalWorkers: allMistris.length,
           availableWorkers: allMistris.filter((m: Mistri) => m.isAvailable).length,
           busyWorkers: allMistris.filter((m: Mistri) => !m.isAvailable).length,
           totalIncompleteJobs: totalIncomplete,
-          workersWithJobs: workersWithJobsData.sort((a, b) => b.activeJobs - a.activeJobs),
         });
       }
     } catch (error) {
@@ -194,33 +207,23 @@ export default function PendingRequestsPage() {
   const loadPendingRequests = async () => {
     setLoading(true);
     try {
-      let response;
-      try {
-        response = await api.get('/admin/pending-requests');
-      } catch (error) {
-        response = await api.get('/admin/all-requests?status=pending');
-      }
+      const response = await api.get('/admin/all-requests?limit=100');
       
       if (response.success) {
         const pending = (response.requests || []).filter(
-          (req: any) => req.status === 'pending_approval' || req.status === 'pending'
+          (req: any) => {
+            const isPendingStatus = req.status === 'pending';
+            const noMistri = !req.assignedMistriId && !req.mistriName;
+            const notAssigned = req.status !== 'assigned' && req.status !== 'completed' && req.status !== 'canceled';
+            return isPendingStatus && (noMistri || notAssigned);
+          }
         );
         setPendingRequests(pending);
+        console.log('Loaded pending requests:', pending.length);
       }
     } catch (error: any) {
       console.error('Failed to load pending requests:', error);
       message.error(error?.message || 'Failed to load pending requests');
-      try {
-        const allResponse = await api.get('/admin/all-requests');
-        if (allResponse.success) {
-          const pending = (allResponse.requests || []).filter(
-            (req: any) => req.status === 'pending_approval' || req.status === 'pending'
-          );
-          setPendingRequests(pending);
-        }
-      } catch (fallbackError) {
-        console.error('Fallback also failed:', fallbackError);
-      }
     } finally {
       setLoading(false);
     }
@@ -275,8 +278,7 @@ export default function PendingRequestsPage() {
         setRequestDetails(response.request);
         if (response.platformServices && response.platformServices.length > 0) {
           const suggestedPrice = response.platformServices.reduce(
-            (sum: number, service: any) => sum + parseFloat(service.price || '0'), 
-            0
+            (sum: number, service: any) => sum + parseFloat(service.price || '0'), 0
           );
           if (suggestedPrice > 0) {
             setPaymentAmount(suggestedPrice);
@@ -291,7 +293,30 @@ export default function PendingRequestsPage() {
     }
   };
 
-  // Function to open assign modal for a specific request
+  const loadAssignedMistriDetails = async (mistriId: string) => {
+    setLoadingMistriDetails(true);
+    try {
+      const response = await api.get(`/admin/mistris/${mistriId}`);
+      if (response.success && response.mistri) {
+        setAssignedMistriDetails(response.mistri);
+      }
+    } catch (error) {
+      console.error('Failed to load mistri details:', error);
+    } finally {
+      setLoadingMistriDetails(false);
+    }
+  };
+
+  const handleViewDetails = async (record: AssignedRequest) => {
+    setSelectedAssignedRequest(record);
+    if (record.assignedMistriId) {
+      await loadAssignedMistriDetails(record.assignedMistriId);
+    } else {
+      setAssignedMistriDetails(null);
+    }
+    setViewDetailsModalVisible(true);
+  };
+
   const openAssignModal = async (request: PendingRequest) => {
     setSelectedRequest(request);
     setSelectedMistri('');
@@ -301,12 +326,36 @@ export default function PendingRequestsPage() {
     setAssignModalVisible(true);
     await loadAvailableMistris();
     await loadRequestDetails(request.id);
+    
+    // Filter mistris based on the request service type
+    if (request.type && mistris.length > 0) {
+      const serviceId = SERVICE_NAME_TO_ID[request.type.toLowerCase()];
+      if (serviceId) {
+        const filtered = mistris.filter(mistri => mistri.serviceId === serviceId);
+        setFilteredMistris(filtered);
+      } else {
+        setFilteredMistris(mistris);
+      }
+    } else {
+      setFilteredMistris(mistris);
+    }
   };
 
-  const handleAssign = (request: PendingRequest) => {
-    openAssignModal(request);
-  };
+  // Update filtered mistris when mistris or selected request changes
+  useEffect(() => {
+    if (selectedRequest && mistris.length > 0) {
+      const serviceId = SERVICE_NAME_TO_ID[selectedRequest.type?.toLowerCase()];
+      if (serviceId) {
+        const filtered = mistris.filter(mistri => mistri.serviceId === serviceId);
+        setFilteredMistris(filtered);
+      } else {
+        setFilteredMistris(mistris);
+      }
+    }
+  }, [mistris, selectedRequest]);
 
+  const handleAssign = (request: PendingRequest) => openAssignModal(request);
+  
   const handleReject = (request: PendingRequest) => {
     setSelectedRequest(request);
     setRejectReason('');
@@ -325,20 +374,19 @@ export default function PendingRequestsPage() {
 
     setAssigning(true);
     try {
-      const response = await api.post(`/admin/pending-requests/${selectedRequest!.id}/assign`, {
+      const requestData = {
         mistriId: selectedMistri,
-        paymentAmount,
-        adminNotes,
-      });
+        paymentAmount: paymentAmount,
+        adminNotes: adminNotes,
+      };
+      const response = await api.post(`/admin/pending-requests/${selectedRequest!.id}/assign`, requestData);
 
       if (response.success) {
         message.success('Request assigned successfully');
         setAssignModalVisible(false);
         loadPendingRequests();
         loadWorkerStats();
-        if (activeTab === 'all') {
-          loadAllRequests();
-        }
+        if (activeTab === 'all') loadAllRequests();
       } else {
         message.error(response.message || 'Failed to assign request');
       }
@@ -356,14 +404,11 @@ export default function PendingRequestsPage() {
       const response = await api.post(`/admin/pending-requests/${selectedRequest!.id}/reject`, {
         reason: rejectReason,
       });
-
       if (response.success) {
         message.success('Request rejected');
         setRejectModalVisible(false);
         loadPendingRequests();
-        if (activeTab === 'all') {
-          loadAllRequests();
-        }
+        if (activeTab === 'all') loadAllRequests();
       } else {
         message.error(response.message || 'Failed to reject request');
       }
@@ -375,6 +420,53 @@ export default function PendingRequestsPage() {
     }
   };
 
+  // Stats Cards Component
+  const StatsCards = () => (
+    <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+      <Col xs={12} sm={6}>
+        <Card style={{ borderRadius: 12, textAlign: 'center' }}>
+          <Statistic
+            title="Total Workers"
+            value={workerStats.totalWorkers}
+            prefix={<TeamOutlined />}
+            valueStyle={{ color: token.colorPrimary }}
+          />
+        </Card>
+      </Col>
+      <Col xs={12} sm={6}>
+        <Card style={{ borderRadius: 12, textAlign: 'center' }}>
+          <Statistic
+            title="Available"
+            value={workerStats.availableWorkers}
+            prefix={<CheckCircleOutlined />}
+            valueStyle={{ color: '#52c41a' }}
+          />
+        </Card>
+      </Col>
+      <Col xs={12} sm={6}>
+        <Card style={{ borderRadius: 12, textAlign: 'center' }}>
+          <Statistic
+            title="Busy"
+            value={workerStats.busyWorkers}
+            prefix={<ClockCircleOutlined />}
+            valueStyle={{ color: '#faad14' }}
+          />
+        </Card>
+      </Col>
+      <Col xs={12} sm={6}>
+        <Card style={{ borderRadius: 12, textAlign: 'center' }}>
+          <Statistic
+            title="Incomplete Jobs"
+            value={workerStats.totalIncompleteJobs}
+            prefix={<WarningOutlined />}
+            valueStyle={{ color: '#ff4d4f' }}
+          />
+        </Card>
+      </Col>
+    </Row>
+  );
+
+  // Pending Columns with Assign button
   const pendingColumns = [
     {
       title: 'Customer',
@@ -382,91 +474,116 @@ export default function PendingRequestsPage() {
       key: 'customerName',
       width: 180,
       render: (name: string, record: PendingRequest) => (
-        <div>
-          <div><strong>{name}</strong></div>
-          <small style={{ color: '#666' }}>
+        <Space direction="vertical" size={0}>
+          <Text strong>{name}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
             <PhoneOutlined style={{ marginRight: 4 }} />
             {record.customerPhone}
-          </small>
-        </div>
+          </Text>
+        </Space>
       ),
     },
     {
-      title: 'Service Type',
+      title: 'Service',
       dataIndex: 'type',
       key: 'type',
       width: 120,
-      render: (type: string) => <Tag color="blue">{type}</Tag>,
+      render: (type: string) => (
+        <Tag icon={<CarOutlined />} color="blue" style={{ borderRadius: 16, padding: '4px 12px' }}>
+          {type}
+        </Tag>
+      ),
     },
     {
-      title: 'Address',
+      title: 'Location',
       dataIndex: 'address',
       key: 'address',
       ellipsis: true,
       render: (address: string) => (
-        <span title={address}>
-          <EnvironmentOutlined style={{ marginRight: 4, color: '#666' }} />
-          {address.length > 60 ? address.substring(0, 60) + '...' : address}
-        </span>
+        <Tooltip title={address}>
+          <Space>
+            <EnvironmentOutlined style={{ color: token.colorTextSecondary }} />
+            <Text style={{ maxWidth: 200 }} ellipsis>
+              {address}
+            </Text>
+          </Space>
+        </Tooltip>
       ),
     },
     {
-      title: 'Customer Notes',
+      title: 'Notes',
       dataIndex: 'customerNotes',
       key: 'customerNotes',
-      width: 200,
+      width: 150,
       ellipsis: true,
-      render: (notes: string) => notes || <Text type="secondary">—</Text>,
+      render: (notes: string) => (
+        notes ? (
+          <Tooltip title={notes}>
+            <Text type="secondary">{notes.length > 30 ? notes.substring(0, 30) + '...' : notes}</Text>
+          </Tooltip>
+        ) : <Text type="secondary">—</Text>
+      ),
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 130,
+      width: 120,
       render: (status: string) => {
-        if (status === 'pending_approval' || status === 'pending') {
-          return <Tag color="orange">Pending Approval</Tag>;
+        if (status === 'pending') {
+          return (
+            <Tag color="orange" icon={<ClockCircleOutlined />} style={{ borderRadius: 16, padding: '4px 12px' }}>
+              Pending
+            </Tag>
+          );
         }
-        return <Tag color="default">{status}</Tag>;
+        return <Tag color="default">{status || 'Pending'}</Tag>;
       },
     },
     {
-      title: 'Created',
+      title: 'Requested',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      width: 160,
+      width: 150,
       render: (date: string) => (
-        <span>
-          <ClockCircleOutlined style={{ marginRight: 4, color: '#666' }} />
-          {new Date(date).toLocaleString()}
-        </span>
+        <Space direction="vertical" size={0}>
+          <Text>{new Date(date).toLocaleDateString()}</Text>
+          <Text type="secondary" style={{ fontSize: 11 }}>{new Date(date).toLocaleTimeString()}</Text>
+        </Space>
       ),
     },
     {
       title: 'Actions',
       key: 'actions',
-      width: 200,
+      width: 220,
       fixed: 'right' as const,
-      render: (_: any, record: PendingRequest) => (
-        <Space>
-          <Button
-            type="primary"
-            icon={<CheckOutlined />}
-            onClick={() => handleAssign(record)}
-            size="small"
-          >
-            Assign
-          </Button>
-          <Button
-            danger
-            icon={<CloseOutlined />}
-            onClick={() => handleReject(record)}
-            size="small"
-          >
-            Reject
-          </Button>
-        </Space>
-      ),
+      render: (_: any, record: PendingRequest) => {
+        if (record.status === 'pending') {
+          return (
+            <Space>
+              <Tooltip title="Assign Mistri">
+                <Button
+                  type="primary"
+                  icon={<CheckOutlined />}
+                  onClick={() => handleAssign(record)}
+                  size="middle"
+                >
+                  Assign
+                </Button>
+              </Tooltip>
+              <Tooltip title="Reject Request">
+                <Button
+                  danger
+                  icon={<CloseOutlined />}
+                  onClick={() => handleReject(record)}
+                  size="middle"
+                />
+              </Tooltip>
+            </Space>
+          );
+        }
+        return <Tag color="default">Completed</Tag>;
+      },
     },
   ];
 
@@ -475,51 +592,60 @@ export default function PendingRequestsPage() {
       title: 'Customer',
       dataIndex: 'customerName',
       key: 'customerName',
-      width: 180,
+      width: 160,
       render: (name: string, record: AssignedRequest) => (
-        <div>
-          <div><strong>{name}</strong></div>
-          <small style={{ color: '#666' }}>{record.customerPhone}</small>
-        </div>
+        <Space direction="vertical" size={0}>
+          <Text strong>{name}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{record.customerPhone}</Text>
+        </Space>
       ),
     },
     {
       title: 'Service',
       dataIndex: 'type',
       key: 'type',
-      width: 120,
+      width: 100,
       render: (type: string) => <Tag color="blue">{type}</Tag>,
     },
     {
       title: 'Mistri',
       dataIndex: 'mistriName',
       key: 'mistriName',
-      width: 150,
-      render: (name: string) => name || <Text type="secondary">Not assigned</Text>,
+      width: 140,
+      render: (name: string, record: AssignedRequest) => (
+        name ? (
+          <Space>
+            <Avatar size="small" style={{ backgroundColor: '#e67e22' }}>
+              {name.charAt(0).toUpperCase()}
+            </Avatar>
+            <Text>{name}</Text>
+          </Space>
+        ) : <Tag color="default">Not assigned</Tag>
+      ),
     },
     {
       title: 'Payment',
       dataIndex: 'paymentAmount',
       key: 'paymentAmount',
       width: 120,
-      render: (amount: string) => 
-        amount ? <Tag color="green">NPR {parseFloat(amount).toLocaleString()}</Tag> : <Text type="secondary">—</Text>,
+      render: (amount: string) => amount ? (
+        <Tag color="green" style={{ borderRadius: 16 }}>रु {parseFloat(amount).toLocaleString()}</Tag>
+      ) : <Text type="secondary">—</Text>,
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 130,
+      width: 120,
       render: (status: string) => {
-        const config: Record<string, { color: string; label: string }> = {
-          pending_approval: { color: 'orange', label: 'Pending Approval' },
-          pending: { color: 'orange', label: 'Pending' },
-          assigned: { color: 'blue', label: 'Assigned' },
-          completed: { color: 'green', label: 'Completed' },
-          canceled: { color: 'red', label: 'Canceled' },
+        const config: Record<string, { color: string; label: string; icon: any }> = {
+          pending: { color: 'orange', label: 'Pending', icon: <ClockCircleOutlined /> },
+          assigned: { color: 'blue', label: 'Assigned', icon: <CheckCircleOutlined /> },
+          completed: { color: 'green', label: 'Completed', icon: <CheckCircleOutlined /> },
+          canceled: { color: 'red', label: 'Canceled', icon: <CloseOutlined /> },
         };
-        const { color, label } = config[status] || { color: 'default', label: status };
-        return <Tag color={color}>{label}</Tag>;
+        const { color, label, icon } = config[status] || { color: 'default', label: status, icon: null };
+        return <Tag color={color} icon={icon} style={{ borderRadius: 16 }}>{label}</Tag>;
       },
     },
     {
@@ -529,46 +655,52 @@ export default function PendingRequestsPage() {
       width: 110,
       render: (date: string) => new Date(date).toLocaleDateString(),
     },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 80,
+      render: (_: any, record: AssignedRequest) => (
+        <Tooltip title="View Details">
+          <Button
+            icon={<EyeOutlined />}
+            onClick={() => handleViewDetails(record)}
+            size="small"
+          />
+        </Tooltip>
+      ),
+    },
   ];
 
   const tabItems = [
     {
       key: 'pending',
-      label: `Pending Approval (${pendingRequests.length})`,
+      label: (
+        <span>
+          <ClockCircleOutlined style={{ marginRight: 8 }} />
+          Pending Approval
+          <Badge count={pendingRequests.length} style={{ marginLeft: 8, backgroundColor: '#faad14' }} />
+        </span>
+      ),
       children: (
-        <>
-          {/* Add a "Bulk Assign" button if multiple requests selected */}
-          {selectedRowKeys.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <Button 
-                type="primary" 
-                icon={<CheckOutlined />}
-                onClick={() => {
-                  message.info(`Bulk assign for ${selectedRowKeys.length} requests coming soon`);
-                }}
-              >
-                Assign Selected ({selectedRowKeys.length})
-              </Button>
-            </div>
-          )}
-          <Table
-            columns={pendingColumns}
-            dataSource={pendingRequests}
-            rowKey="id"
-            loading={loading}
-            rowSelection={{
-              selectedRowKeys,
-              onChange: (selectedKeys) => setSelectedRowKeys(selectedKeys),
-            }}
-            pagination={{ pageSize: 10, showTotal: (total) => `Total ${total} requests` }}
-            scroll={{ x: 1000 }}
-          />
-        </>
+        <Table
+          columns={pendingColumns}
+          dataSource={pendingRequests}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 10, showTotal: (total) => `Total ${total} requests` }}
+          scroll={{ x: 1200 }}
+          locale={{ emptyText: 'No pending requests found' }}
+        />
       ),
     },
     {
       key: 'all',
-      label: 'All Requests',
+      label: (
+        <span>
+          <UnorderedListOutlined style={{ marginRight: 8 }} />
+          All Requests
+        </span>
+      ),
       children: (
         <Table
           columns={allColumns}
@@ -582,200 +714,102 @@ export default function PendingRequestsPage() {
             showTotal: (total) => `Total ${total} requests`,
             onChange: (page) => setPagination({ ...pagination, page }),
           }}
-          scroll={{ x: 900 }}
+          scroll={{ x: 1100 }}
         />
       ),
     },
   ];
 
+  // Get service type display name
+  const getServiceDisplayName = (serviceType: string) => {
+    const names: Record<string, string> = {
+      'plumber': 'Plumbing',
+      'electrician': 'Electrical',
+      'painter': 'Painting',
+      'cleaning': 'Cleaning',
+      'carpenter': 'Carpentry',
+      'ac_repair': 'AC Repair',
+    };
+    return names[serviceType?.toLowerCase()] || serviceType;
+  };
+
   return (
-    <div style={{ padding: '24px', minHeight: '100vh', background: '#f0f2f5' }}>
-      <Row gutter={24}>
-        {/* Left Column - Main Content */}
-        <Col xs={24} lg={18}>
-          <Card>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Title level={3} style={{ margin: 0 }}>
-                Service Request Management
-              </Title>
-              <Button 
-                icon={<ReloadOutlined />} 
-                onClick={() => {
-                  if (activeTab === 'pending') {
-                    loadPendingRequests();
-                  } else {
-                    loadAllRequests();
-                  }
-                  loadWorkerStats();
-                }}
-              >
-                Refresh
-              </Button>
-            </div>
+    <div style={{ padding: 24, minHeight: '100vh', background: '#f0f2f5' }}>
+      <Card style={{ borderRadius: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div>
+            <Title level={3} style={{ margin: 0 }}>Service Request Management</Title>
+            <Text type="secondary">Review and assign service requests to available mistris</Text>
+          </div>
+          <Button icon={<ReloadOutlined />} onClick={() => {
+            if (activeTab === 'pending') loadPendingRequests();
+            else loadAllRequests();
+            loadWorkerStats();
+          }}>
+            Refresh
+          </Button>
+        </div>
 
-            <Alert
-              message="How it works"
-              description="Click the 'Assign' button next to any request to open the assignment modal. Select a mistri, set the payment amount, and confirm."
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
+        <StatsCards />
 
-            <Tabs 
-              activeKey={activeTab} 
-              onChange={setActiveTab} 
-              items={tabItems}
-              type="card"
-            />
-          </Card>
-        </Col>
+        <Alert
+          message="How it works"
+          description="Click the 'Assign' button next to any pending request to open the assignment modal. Only mistris with matching service type will be shown."
+          type="info"
+          showIcon
+          style={{ marginBottom: 20, borderRadius: 12 }}
+        />
 
-        {/* Right Column - Worker Stats Sidebar */}
-        <Col xs={24} lg={6}>
-          <Card style={{ marginBottom: 16 }}>
-            <div style={{ textAlign: 'center', marginBottom: 16 }}>
-              <TeamOutlined style={{ fontSize: 32, color: '#e67e22' }} />
-              <Title level={4} style={{ marginTop: 8, marginBottom: 0 }}>
-                Worker Overview
-              </Title>
-            </div>
-            
-            <Row gutter={16}>
-              <Col span={12}>
-                <Statistic
-                  title="Total Workers"
-                  value={workerStats.totalWorkers}
-                  prefix={<UserOutlined />}
-                  valueStyle={{ color: '#3f8600' }}
-                />
-              </Col>
-              <Col span={12}>
-                <Statistic
-                  title="Available"
-                  value={workerStats.availableWorkers}
-                  prefix={<CheckCircleOutlined />}
-                  valueStyle={{ color: '#52c41a' }}
-                />
-              </Col>
-            </Row>
-            
-            <Divider style={{ margin: '12px 0' }} />
-            
-            <Row gutter={16}>
-              <Col span={12}>
-                <Statistic
-                  title="Busy"
-                  value={workerStats.busyWorkers}
-                  prefix={<ClockCircleOutlined />}
-                  valueStyle={{ color: '#faad14' }}
-                />
-              </Col>
-              <Col span={12}>
-                <Statistic
-                  title="Incomplete Jobs"
-                  value={workerStats.totalIncompleteJobs}
-                  prefix={<WarningOutlined />}
-                  valueStyle={{ color: '#cf1322' }}
-                />
-              </Col>
-            </Row>
-          </Card>
+        <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} type="card" />
+      </Card>
 
-          <Card title="Workers with Active Jobs">
-            {workerStats.workersWithJobs.length === 0 ? (
-              <Empty 
-                description="No active jobs" 
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-              />
-            ) : (
-              <List
-                dataSource={workerStats.workersWithJobs}
-                renderItem={(worker) => (
-                  <List.Item>
-                    <List.Item.Meta
-                      avatar={
-                        <Avatar style={{ backgroundColor: '#e67e22' }}>
-                          {worker.name.charAt(0).toUpperCase()}
-                        </Avatar>
-                      }
-                      title={
-                        <Space>
-                          <Text strong>{worker.name}</Text>
-                          <Badge 
-                            count={worker.activeJobs} 
-                            style={{ backgroundColor: '#faad14' }}
-                          />
-                        </Space>
-                      }
-                      description={
-                        <>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            <PhoneOutlined /> {worker.phone}
-                          </Text>
-                          {worker.rating !== 'N/A' && (
-                            <div>
-                              <Text type="secondary" style={{ fontSize: 12 }}>
-                                ⭐ Rating: {worker.rating}
-                              </Text>
-                            </div>
-                          )}
-                        </>
-                      }
-                    />
-                  </List.Item>
-                )}
-              />
-            )}
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Assign Modal - This opens when you click the Assign button */}
+      {/* Assign Modal */}
       <Modal
-        title="Assign Service Request"
+        title={
+          <Space>
+            <CheckCircleOutlined style={{ color: token.colorPrimary }} />
+            <span>Assign Service Request</span>
+          </Space>
+        }
         open={assignModalVisible}
         onOk={confirmAssign}
         onCancel={() => setAssignModalVisible(false)}
         confirmLoading={assigning}
-        width={750}
+        width={700}
         okText="Assign Request"
         cancelText="Cancel"
       >
         {selectedRequest ? (
           <>
-            {/* Request Details Section */}
             <div style={{ marginBottom: 24 }}>
-              <div style={{ 
-                background: '#f5f5f5', 
-                padding: '12px 16px', 
-                borderRadius: 8,
-                marginBottom: 16 
-              }}>
-                <Text strong style={{ fontSize: 16 }}>Request Details</Text>
+              <div style={{ background: token.colorPrimaryBg, padding: '12px 16px', borderRadius: 12, marginBottom: 16 }}>
+                <Text strong>Request Details</Text>
               </div>
-              
+
               {loadingDetails ? (
-                <div style={{ textAlign: 'center', padding: 20 }}>
+                <div style={{ textAlign: 'center', padding: 40 }}>
                   <Spin />
                 </div>
               ) : (
                 <>
-                  <Descriptions column={1} size="small" style={{ marginBottom: 8 }}>
-                    <Descriptions.Item label={
-                      <span><UserOutlined /> Customer</span>
-                    }>
-                      <strong>{selectedRequest.customerName}</strong> ({selectedRequest.customerPhone})
+                  <Descriptions column={1} size="small" bordered style={{ marginBottom: 16 }}>
+                    <Descriptions.Item label={<><UserOutlined /> Customer</>}>
+                      <Text strong>{selectedRequest.customerName}</Text>
+                      <br />
+                      <Text type="secondary">{selectedRequest.customerPhone}</Text>
                     </Descriptions.Item>
-                    <Descriptions.Item label="Service Type">
-                      <Tag color="blue">{selectedRequest.type}</Tag>
+                    <Descriptions.Item label="Service">
+                      <Tag color="blue">{getServiceDisplayName(selectedRequest.type)}</Tag>
                     </Descriptions.Item>
                     <Descriptions.Item label="Address">
-                      <EnvironmentOutlined /> {selectedRequest.address}
+                      <EnvironmentOutlined style={{ marginRight: 8 }} />
+                      {selectedRequest.address}
                     </Descriptions.Item>
                     <Descriptions.Item label="Customer Notes">
                       {selectedRequest.customerNotes || <Text type="secondary">No notes provided</Text>}
                     </Descriptions.Item>
                     <Descriptions.Item label="Requested At">
+                      <CalendarOutlined style={{ marginRight: 8 }} />
                       {new Date(selectedRequest.createdAt).toLocaleString()}
                     </Descriptions.Item>
                   </Descriptions>
@@ -783,67 +817,69 @@ export default function PendingRequestsPage() {
                   {requestDetails?.platformServices && requestDetails.platformServices.length > 0 && (
                     <div style={{ marginTop: 12 }}>
                       <Text strong>Selected Services:</Text>
-                      <div style={{ marginTop: 8 }}>
+                      <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                         {requestDetails.platformServices.map((service) => (
-                          <Tag key={service.id} color="green" style={{ marginBottom: 4 }}>
+                          <Tag key={service.id} color="green" style={{ borderRadius: 16, padding: '4px 12px' }}>
                             {service.name} - NPR {parseFloat(service.price).toLocaleString()}
                           </Tag>
                         ))}
                       </div>
                     </div>
                   )}
+
+                  {/* Show warning if no mistris available for this service type */}
+                  {filteredMistris.length === 0 && mistris.length > 0 && (
+                    <Alert
+                      message="No matching mistris found"
+                      description={`No ${getServiceDisplayName(selectedRequest.type)} mistris are currently available for assignment.`}
+                      type="warning"
+                      showIcon
+                      style={{ marginTop: 16, borderRadius: 8 }}
+                    />
+                  )}
                 </>
               )}
             </div>
 
-            {/* Assignment Section */}
             <div>
-              <div style={{ 
-                background: '#f5f5f5', 
-                padding: '12px 16px', 
-                borderRadius: 8,
-                marginBottom: 16 
-              }}>
-                <Text strong style={{ fontSize: 16 }}>Assignment Details</Text>
+              <div style={{ background: token.colorPrimaryBg, padding: '12px 16px', borderRadius: 12, marginBottom: 16 }}>
+                <Text strong>Assignment Details</Text>
+                <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
+                  Showing only {getServiceDisplayName(selectedRequest.type)} professionals
+                </Text>
               </div>
 
               <div style={{ marginBottom: 16 }}>
-                <Text strong>Select Mistri:</Text>
+                <Text strong>Select Mistri</Text>
                 <Select
-                  placeholder="Choose a mistri to assign"
+                  placeholder={`Choose a ${getServiceDisplayName(selectedRequest.type)} mistri to assign`}
                   style={{ width: '100%', marginTop: 8 }}
                   value={selectedMistri}
                   onChange={setSelectedMistri}
                   showSearch
-                  optionFilterProp="children"
                   size="large"
+                  notFoundContent={filteredMistris.length === 0 ? `No ${getServiceDisplayName(selectedRequest.type)} mistris available` : 'No mistris found'}
                 >
-                  {mistris.map(mistri => (
+                  {filteredMistris.map(mistri => (
                     <Select.Option key={mistri.id} value={mistri.id}>
-                      <Space direction="vertical" size={0}>
-                        <Text strong>{mistri.fullName}</Text>
+                      <Space>
+                        <Avatar size="small" style={{ backgroundColor: token.colorPrimary }}>
+                          {mistri.fullName.charAt(0).toUpperCase()}
+                        </Avatar>
+                        <span>{mistri.fullName}</span>
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                          {mistri.phoneNumber}
-                          {!mistri.isAvailable && ' 🔴 Busy'}
-                          {mistri.isAvailable && ' 🟢 Available'}
-                          {mistri.currentJobs !== undefined && mistri.currentJobs > 0 && 
-                            ` | ${mistri.currentJobs} active job(s)`
-                          }
-                          {mistri.averageRating && ` | ⭐ ${mistri.averageRating}`}
+                          {mistri.isAvailable ? '🟢 Available' : '🔴 Busy'}
+                          {mistri.averageRating && ` ⭐ ${mistri.averageRating}`}
+                          {mistri.currentJobs && mistri.currentJobs > 0 && ` (${mistri.currentJobs} active)`}
                         </Text>
                       </Space>
                     </Select.Option>
                   ))}
                 </Select>
-                {mistris.filter(m => m.isAvailable).length === 0 && (
-                  <Text type="warning" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
-                    ⚠️ No available mistris at the moment. You can still assign busy mistris.
-                  </Text>
-                )}
               </div>
 
               <div style={{ marginBottom: 16 }}>
-                <Text strong>Set Payment Amount:</Text>
+                <Text strong>Set Payment Amount (NPR)</Text>
                 <InputNumber
                   style={{ width: '100%', marginTop: 8 }}
                   value={paymentAmount}
@@ -852,23 +888,23 @@ export default function PendingRequestsPage() {
                   step={100}
                   size="large"
                   prefix={<DollarOutlined />}
-                  formatter={value => `NPR ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={value => value!.replace(/NPR\s?|(,*)/g, '') as unknown as number}
+                  formatter={value => `रु ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                  parser={value => value!.replace(/रु\s?|(,*)/g, '') as unknown as number}
                   placeholder="Enter payment amount"
                 />
                 <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
-                  This amount will be shown to the customer as the total cost.
+                  This amount will be shown to the customer
                 </Text>
               </div>
 
               <div>
-                <Text strong>Admin Notes (Optional):</Text>
+                <Text strong>Admin Notes (Optional)</Text>
                 <TextArea
                   rows={3}
                   value={adminNotes}
                   onChange={(e) => setAdminNotes(e.target.value)}
-                  placeholder="Add any instructions for the mistri or notes about this assignment"
-                  style={{ marginTop: 8 }}
+                  placeholder="Add any instructions for the mistri"
+                  style={{ marginTop: 8, borderRadius: 12 }}
                 />
               </div>
             </div>
@@ -882,7 +918,12 @@ export default function PendingRequestsPage() {
 
       {/* Reject Modal */}
       <Modal
-        title="Reject Service Request"
+        title={
+          <Space>
+            <CloseOutlined style={{ color: '#ff4d4f' }} />
+            <span>Reject Service Request</span>
+          </Space>
+        }
         open={rejectModalVisible}
         onOk={confirmReject}
         onCancel={() => setRejectModalVisible(false)}
@@ -896,17 +937,134 @@ export default function PendingRequestsPage() {
           description="Are you sure you want to reject this service request? The customer will be notified."
           type="warning"
           showIcon
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 16, borderRadius: 12 }}
         />
-        
         <Text strong>Reason for rejection (optional):</Text>
         <TextArea
           rows={3}
           value={rejectReason}
           onChange={(e) => setRejectReason(e.target.value)}
           placeholder="Provide a reason to inform the customer"
-          style={{ marginTop: 8 }}
+          style={{ marginTop: 8, borderRadius: 12 }}
         />
+      </Modal>
+
+      {/* View Request Details Modal */}
+      <Modal
+        title={
+          <Space>
+            <EyeOutlined style={{ color: token.colorPrimary }} />
+            <span>Service Request Details</span>
+          </Space>
+        }
+        open={viewDetailsModalVisible}
+        onCancel={() => {
+          setViewDetailsModalVisible(false);
+          setSelectedAssignedRequest(null);
+          setAssignedMistriDetails(null);
+        }}
+        footer={[
+          <Button key="close" onClick={() => setViewDetailsModalVisible(false)}>
+            Close
+          </Button>
+        ]}
+        width={600}
+      >
+        {selectedAssignedRequest && (
+          <>
+            <Descriptions column={1} size="small" bordered style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="Request ID">
+                <Text code>{selectedAssignedRequest.id}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label={<><UserOutlined /> Customer</>}>
+                <Text strong>{selectedAssignedRequest.customerName}</Text>
+                <br />
+                <Text type="secondary">{selectedAssignedRequest.customerPhone}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Service Type">
+                <Tag color="blue">{getServiceDisplayName(selectedAssignedRequest.type)}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Address">
+                <EnvironmentOutlined style={{ marginRight: 8 }} />
+                {selectedAssignedRequest.address}
+              </Descriptions.Item>
+              <Descriptions.Item label="Payment Amount">
+                {selectedAssignedRequest.paymentAmount ? (
+                  <Tag color="green">रु {parseFloat(selectedAssignedRequest.paymentAmount).toLocaleString()}</Tag>
+                ) : <Text type="secondary">Not set</Text>}
+              </Descriptions.Item>
+              <Descriptions.Item label="Status">
+                <Tag color={
+                  selectedAssignedRequest.status === 'assigned' ? 'blue' :
+                  selectedAssignedRequest.status === 'completed' ? 'green' :
+                  selectedAssignedRequest.status === 'canceled' ? 'red' : 'orange'
+                }>
+                  {selectedAssignedRequest.status}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Created At">
+                <CalendarOutlined style={{ marginRight: 8 }} />
+                {new Date(selectedAssignedRequest.createdAt).toLocaleString()}
+              </Descriptions.Item>
+              {selectedAssignedRequest.assignedAt && (
+                <Descriptions.Item label="Assigned At">
+                  <ClockCircleOutlined style={{ marginRight: 8 }} />
+                  {new Date(selectedAssignedRequest.assignedAt).toLocaleString()}
+                </Descriptions.Item>
+              )}
+              {selectedAssignedRequest.completedAt && (
+                <Descriptions.Item label="Completed At">
+                  <CheckCircleOutlined style={{ marginRight: 8 }} />
+                  {new Date(selectedAssignedRequest.completedAt).toLocaleString()}
+                </Descriptions.Item>
+              )}
+            </Descriptions>
+
+            {/* Assigned Mistri Details */}
+            {selectedAssignedRequest.mistriName && (
+              <div>
+                <div style={{ background: token.colorPrimaryBg, padding: '12px 16px', borderRadius: 12, marginBottom: 16 }}>
+                  <Text strong><TeamOutlined /> Assigned Professional</Text>
+                </div>
+                
+                {loadingMistriDetails ? (
+                  <div style={{ textAlign: 'center', padding: 20 }}>
+                    <Spin />
+                  </div>
+                ) : assignedMistriDetails ? (
+                  <Descriptions column={1} size="small" bordered>
+                    <Descriptions.Item label="Name">
+                      <Space>
+                        <Avatar style={{ backgroundColor: '#e67e22' }}>
+                          {assignedMistriDetails.fullName.charAt(0).toUpperCase()}
+                        </Avatar>
+                        <Text strong>{assignedMistriDetails.fullName}</Text>
+                      </Space>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Phone">
+                      <PhoneOutlined style={{ marginRight: 8 }} />
+                      {assignedMistriDetails.phoneNumber}
+                    </Descriptions.Item>
+                    {assignedMistriDetails.averageRating && (
+                      <Descriptions.Item label="Rating">
+                        <StarOutlined style={{ color: '#faad14', marginRight: 4 }} />
+                        {assignedMistriDetails.averageRating} / 5
+                      </Descriptions.Item>
+                    )}
+                    {assignedMistriDetails.jobsCompleted !== null && (
+                      <Descriptions.Item label="Jobs Completed">
+                        <CheckCircleOutlined style={{ marginRight: 8 }} />
+                        {assignedMistriDetails.jobsCompleted} jobs
+                      </Descriptions.Item>
+                    )}
+                  </Descriptions>
+                ) : (
+                  <Text type="secondary">Professional details not available</Text>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </Modal>
     </div>
   );

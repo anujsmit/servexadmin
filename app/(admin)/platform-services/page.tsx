@@ -9,7 +9,8 @@ import {
 } from 'antd';
 import { 
   PlusOutlined, EditOutlined, DeleteOutlined, PictureOutlined, 
-  ReloadOutlined, DeleteRowOutlined, ExclamationCircleOutlined 
+  ReloadOutlined, DeleteRowOutlined, ExclamationCircleOutlined,
+  StarOutlined, StarFilled // Add star icons for popular
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../../_lib/api';
@@ -28,6 +29,7 @@ interface PlatformService {
   price: string;
   imageUrl: string | null;
   isActive: boolean;
+  isPopular: boolean; // Add this field
   categoryName: string;
 }
 
@@ -46,6 +48,7 @@ export default function PlatformServicesPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+  const [popularLoading, setPopularLoading] = useState<string | null>(null); // Add loading state for popular toggle
   const { message } = App.useApp();
 
   // Fetch platform services
@@ -90,6 +93,8 @@ export default function PlatformServicesPage() {
       description: svc.description,
       price: parseFloat(svc.price),
       isActive: svc.isActive,
+      isPopular: svc.isPopular,
+      duration_minutes: svc.duration_minutes || null,
     });
   };
 
@@ -105,6 +110,7 @@ export default function PlatformServicesPage() {
         price: values.price,
         imageUrl: imageUrl || null,
         isActive: values.isActive !== undefined ? values.isActive : true,
+        isPopular: values.isPopular || false, // Add this line
         duration_minutes: values.duration_minutes || null,
       };
       
@@ -137,6 +143,7 @@ export default function PlatformServicesPage() {
         description: values.description || null,
         price: values.price,
         isActive: values.isActive !== undefined ? values.isActive : true,
+        isPopular: values.isPopular || false, // Add this line
       };
       
       if (imageUrl !== editing.imageUrl) {
@@ -162,6 +169,25 @@ export default function PlatformServicesPage() {
       message.error(errorMessage);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Add function to toggle popular status
+  const togglePopular = async (id: string, currentStatus: boolean, name: string) => {
+    setPopularLoading(id);
+    try {
+      const response = await api.patch(`/admin/platform-services/${id}`, {
+        isPopular: !currentStatus
+      });
+      
+      message.success(`Service "${name}" ${!currentStatus ? 'marked as' : 'removed from'} popular`);
+      mutate();
+    } catch (err: unknown) {
+      console.error('Toggle popular error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update popular status';
+      message.error(errorMessage);
+    } finally {
+      setPopularLoading(null);
     }
   };
 
@@ -283,7 +309,16 @@ export default function PlatformServicesPage() {
       dataIndex: 'name',
       key: 'name',
       width: 200,
-      render: (name: string) => <Text strong>{name}</Text>,
+      render: (name: string, record: PlatformService) => (
+        <Space>
+          <Text strong>{name}</Text>
+          {record.isPopular && (
+            <Tag color="gold" icon={<StarFilled style={{ fontSize: 12 }} />}>
+              Popular
+            </Tag>
+          )}
+        </Space>
+      ),
     },
     {
       title: 'Category',
@@ -313,6 +348,29 @@ export default function PlatformServicesPage() {
       render: (description: string | null) => description ?? <Text type="secondary">—</Text>,
     },
     {
+      title: 'Popular',
+      dataIndex: 'isPopular',
+      key: 'isPopular',
+      width: 100,
+      align: 'center',
+      render: (isPopular: boolean, record: PlatformService) => (
+        <Tooltip title={isPopular ? 'Remove from popular' : 'Mark as popular'}>
+          <Button
+            type={isPopular ? 'primary' : 'default'}
+            icon={isPopular ? <StarFilled /> : <StarOutlined />}
+            size="small"
+            loading={popularLoading === record.id}
+            onClick={() => togglePopular(record.id, isPopular, record.name)}
+            style={{
+              backgroundColor: isPopular ? '#faad14' : undefined,
+              borderColor: isPopular ? '#faad14' : undefined,
+              color: isPopular ? '#fff' : undefined,
+            }}
+          />
+        </Tooltip>
+      ),
+    },
+    {
       title: 'Status',
       dataIndex: 'isActive',
       key: 'isActive',
@@ -326,7 +384,7 @@ export default function PlatformServicesPage() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 100,
+      width: 120,
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
@@ -466,6 +524,21 @@ export default function PlatformServicesPage() {
         />
       </Form.Item>
 
+      {/* Add Popular toggle in form */}
+      <Form.Item 
+        label="Popular Service" 
+        name="isPopular" 
+        valuePropName="checked" 
+        initialValue={false}
+        tooltip="Mark this service as popular to highlight it in the customer app"
+      >
+        <Switch 
+          checkedChildren="Popular" 
+          unCheckedChildren="Regular" 
+          disabled={submitting}
+        />
+      </Form.Item>
+
       <Form.Item>
         <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
           <Button 
@@ -549,7 +622,7 @@ export default function PlatformServicesPage() {
           dataSource={services}
           loading={isLoading}
           rowKey="id"
-          scroll={{ x: 1000 }}
+          scroll={{ x: 1200 }}
           pagination={{ 
             pageSize: 20, 
             showSizeChanger: true,
