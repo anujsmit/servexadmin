@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Button, Spin, Typography, App, Image, Space } from 'antd';
+import { Button, Spin, Typography, App, Image as AntImage, Space } from 'antd';
 import { PlusOutlined, LoadingOutlined, DeleteOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../_lib/api';
 
@@ -129,11 +129,13 @@ export default function ImageUpload({
     }
   };
 
+  // FIXED: Use document.createElement('img') instead of new Image()
   const compressImage = (file: File, maxWidth: number = 1200, quality: number = 80): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
-        const img = new Image();
+        // Use document.createElement('img') to avoid conflict with Ant Design Image
+        const img = document.createElement('img');
         img.onload = () => {
           const canvas = document.createElement('canvas');
           let width = img.width;
@@ -167,10 +169,14 @@ export default function ImageUpload({
           const base64Data = base64.split(',')[1];
           resolve(base64Data);
         };
-        img.onerror = reject;
+        img.onerror = () => {
+          reject(new Error('Failed to load image for compression'));
+        };
         img.src = e.target?.result as string;
       };
-      reader.onerror = reject;
+      reader.onerror = () => {
+        reject(new Error('Failed to read file'));
+      };
       reader.readAsDataURL(file);
     });
   };
@@ -212,7 +218,7 @@ export default function ImageUpload({
             width: '100%',
             ...(aspectRatio !== 'free' ? getAspectRatioStyles() : {})
           }}>
-            <Image
+            <AntImage
               src={displayImage}
               alt="Uploaded image"
               style={{

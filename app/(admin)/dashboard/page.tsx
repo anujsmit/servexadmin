@@ -198,12 +198,12 @@ export default function DashboardPage() {
                 hoverable
                 onClick={() => {
                   // Navigate to relevant page on click
-                  if (card.key === 'totalCustomers') router.push('/admin/users?role=user');
-                  if (card.key === 'totalMistris') router.push('/admin/servex');
-                  if (card.key === 'pendingRequests') router.push('/admin/service-requests?status=pending');
-                  if (card.key === 'pendingRatings') router.push('/admin/ratings?filter=pending');
-                  if (card.key === 'totalRevenue') router.push('/admin/analytics');
-                  if (card.key === 'totalSmsSent') router.push('/admin/sms-logs');
+                  if (card.key === 'totalCustomers') router.push('/users?role=user');
+                  if (card.key === 'totalMistris') router.push('/servex');
+                  if (card.key === 'pendingRequests') router.push('/pending-requests');
+                  if (card.key === 'pendingRatings') router.push('/ratings?filter=pending');
+                  if (card.key === 'totalRevenue') router.push('/analytics');
+                  if (card.key === 'totalSmsSent') router.push('/sms-logs');
                 }}
               >
                 <div className={styles.statInner}>
@@ -234,7 +234,7 @@ export default function DashboardPage() {
             <div className={styles.quickActions}>
               <div 
                 className={styles.quickLink} 
-                onClick={() => router.push('/admin/ratings?filter=pending')}
+                onClick={() => router.push('/ratings?filter=pending')}
                 style={{ '--accent': '#7c3aed' } as any}
               >
                 <StarOutlined />
@@ -245,7 +245,7 @@ export default function DashboardPage() {
               </div>
               <div 
                 className={styles.quickLink} 
-                onClick={() => router.push('/admin/users')}
+                onClick={() => router.push('/users')}
                 style={{ '--accent': '#2563eb' } as any}
               >
                 <UserOutlined />
@@ -253,7 +253,7 @@ export default function DashboardPage() {
               </div>
               <div 
                 className={styles.quickLink} 
-                onClick={() => router.push('/admin/hero-banners')}
+                onClick={() => router.push('/hero-banners')}
                 style={{ '--accent': '#059669' } as any}
               >
                 <span>🖼</span>
@@ -261,7 +261,7 @@ export default function DashboardPage() {
               </div>
               <div 
                 className={styles.quickLink} 
-                onClick={() => router.push('/admin/platform-services')}
+                onClick={() => router.push('/platform-services')}
                 style={{ '--accent': '#0891b2' } as any}
               >
                 <span>🔧</span>
@@ -269,7 +269,7 @@ export default function DashboardPage() {
               </div>
               <div 
                 className={styles.quickLink} 
-                onClick={() => router.push('/admin/sms-logs')}
+                onClick={() => router.push('/sms-logs')}
                 style={{ '--accent': '#be185d' } as any}
               >
                 <MessageOutlined />

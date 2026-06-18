@@ -45,6 +45,7 @@ import {
   CarOutlined,
   EyeOutlined,
   UnorderedListOutlined,
+  ToolOutlined, // Changed from WrenchOutlined to ToolOutlined
 } from '@ant-design/icons';
 import { api } from '../../../_lib/api';
 
@@ -81,6 +82,7 @@ interface Mistri {
   averageRating: string | null;
   jobsCompleted: number | null;
   currentJobs?: number;
+  skills?: string[];
 }
 
 interface AssignedRequest {
@@ -114,6 +116,7 @@ interface WorkerStats {
   availableWorkers: number;
   busyWorkers: number;
   totalIncompleteJobs: number;
+  workersByService: Record<string, number>;
 }
 
 interface AssignedMistriDetails {
@@ -135,6 +138,36 @@ const SERVICE_NAME_TO_ID: Record<string, number> = {
   'ac_repair': 6,
 };
 
+// Reverse mapping for display
+const SERVICE_ID_TO_NAME: Record<number, string> = {
+  1: 'Plumber',
+  2: 'Electrician',
+  3: 'Painter',
+  4: 'Cleaner',
+  5: 'Carpenter',
+  6: 'AC Repair',
+};
+
+// Service display names
+const SERVICE_DISPLAY_NAMES: Record<string, string> = {
+  'plumber': 'Plumbing',
+  'electrician': 'Electrical',
+  'painter': 'Painting',
+  'cleaning': 'Cleaning',
+  'carpenter': 'Carpentry',
+  'ac_repair': 'AC Repair',
+};
+
+// Service icons - using available icons
+const SERVICE_ICONS: Record<string, React.ReactNode> = {
+  'plumber': <ToolOutlined />,
+  'electrician': <ToolOutlined />,
+  'painter': <ToolOutlined />,
+  'cleaning': <ToolOutlined />,
+  'carpenter': <ToolOutlined />,
+  'ac_repair': <ToolOutlined />,
+};
+
 export default function PendingRequestsPage() {
   const { token } = useToken();
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
@@ -143,7 +176,7 @@ export default function PendingRequestsPage() {
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<PendingRequest | null>(null);
   const [requestDetails, setRequestDetails] = useState<RequestDetails | null>(null);
-  const [mistris, setMistris] = useState<Mistri[]>([]);
+  const [allMistris, setAllMistris] = useState<Mistri[]>([]);
   const [filteredMistris, setFilteredMistris] = useState<Mistri[]>([]);
   const [selectedMistri, setSelectedMistri] = useState<string>('');
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
@@ -163,6 +196,7 @@ export default function PendingRequestsPage() {
     availableWorkers: 0,
     busyWorkers: 0,
     totalIncompleteJobs: 0,
+    workersByService: {},
   });
 
   useEffect(() => {
@@ -180,10 +214,27 @@ export default function PendingRequestsPage() {
     try {
       const mistrisResponse = await api.get('/admin/available-mistris?limit=100');
       if (mistrisResponse.success) {
-        const allMistris = mistrisResponse.mistris || [];
+        const allMistrisData = mistrisResponse.mistris || [];
         let totalIncomplete = 0;
 
-        for (const mistri of allMistris) {
+        // Calculate workers by service
+        const workersByService: Record<string, number> = {};
+        let availableCount = 0;
+        let busyCount = 0;
+
+        for (const mistri of allMistrisData) {
+          // Count by service
+          const serviceName = mistri.serviceName || 'Unknown';
+          workersByService[serviceName] = (workersByService[serviceName] || 0) + 1;
+
+          // Count availability
+          if (mistri.isAvailable) {
+            availableCount++;
+          } else {
+            busyCount++;
+          }
+
+          // Count incomplete jobs
           try {
             const jobsResponse = await api.get(`/admin/mistri-jobs/${mistri.id}?status=assigned`);
             totalIncomplete += jobsResponse.success ? (jobsResponse.count || 0) : 0;
@@ -193,10 +244,11 @@ export default function PendingRequestsPage() {
         }
 
         setWorkerStats({
-          totalWorkers: allMistris.length,
-          availableWorkers: allMistris.filter((m: Mistri) => m.isAvailable).length,
-          busyWorkers: allMistris.filter((m: Mistri) => !m.isAvailable).length,
+          totalWorkers: allMistrisData.length,
+          availableWorkers: availableCount,
+          busyWorkers: busyCount,
           totalIncompleteJobs: totalIncomplete,
+          workersByService,
         });
       }
     } catch (error) {
@@ -262,12 +314,48 @@ export default function PendingRequestsPage() {
             }
           })
         );
-        setMistris(mistrisWithJobs);
+        setAllMistris(mistrisWithJobs);
+        
+        // If there's a selected request, filter mistris based on it
+        if (selectedRequest) {
+          filterMistrisByService(mistrisWithJobs, selectedRequest.type);
+        }
       }
     } catch (error: any) {
       console.error('Failed to load mistris:', error);
       message.error(error?.message || 'Failed to load mistris');
     }
+  };
+
+  // Filter mistris based on service type
+  const filterMistrisByService = (mistris: Mistri[], serviceType: string) => {
+    // Get the service ID for the request type
+    const requestedServiceId = SERVICE_NAME_TO_ID[serviceType?.toLowerCase()];
+    
+    if (!requestedServiceId) {
+      console.warn(`No service ID found for type: ${serviceType}`);
+      setFilteredMistris(mistris);
+      return;
+    }
+
+    // Filter mistris whose serviceId matches the requested service
+    const filtered = mistris.filter(mistri => {
+      // Check by serviceId
+      if (mistri.serviceId === requestedServiceId) {
+        return true;
+      }
+      
+      // Check by serviceName
+      if (mistri.serviceName) {
+        const serviceName = SERVICE_ID_TO_NAME[requestedServiceId];
+        return mistri.serviceName.toLowerCase() === serviceType.toLowerCase() ||
+               mistri.serviceName.toLowerCase() === serviceName?.toLowerCase();
+      }
+      
+      return false;
+    });
+
+    setFilteredMistris(filtered);
   };
 
   const loadRequestDetails = async (requestId: string) => {
@@ -324,35 +412,23 @@ export default function PendingRequestsPage() {
     setAdminNotes('');
     setRequestDetails(null);
     setAssignModalVisible(true);
+    
+    // Load available mistris first
     await loadAvailableMistris();
     await loadRequestDetails(request.id);
     
     // Filter mistris based on the request service type
-    if (request.type && mistris.length > 0) {
-      const serviceId = SERVICE_NAME_TO_ID[request.type.toLowerCase()];
-      if (serviceId) {
-        const filtered = mistris.filter(mistri => mistri.serviceId === serviceId);
-        setFilteredMistris(filtered);
-      } else {
-        setFilteredMistris(mistris);
-      }
-    } else {
-      setFilteredMistris(mistris);
+    if (request.type && allMistris.length > 0) {
+      filterMistrisByService(allMistris, request.type);
     }
   };
 
-  // Update filtered mistris when mistris or selected request changes
+  // Update filtered mistris when allMistris or selected request changes
   useEffect(() => {
-    if (selectedRequest && mistris.length > 0) {
-      const serviceId = SERVICE_NAME_TO_ID[selectedRequest.type?.toLowerCase()];
-      if (serviceId) {
-        const filtered = mistris.filter(mistri => mistri.serviceId === serviceId);
-        setFilteredMistris(filtered);
-      } else {
-        setFilteredMistris(mistris);
-      }
+    if (selectedRequest && allMistris.length > 0) {
+      filterMistrisByService(allMistris, selectedRequest.type);
     }
-  }, [mistris, selectedRequest]);
+  }, [allMistris, selectedRequest]);
 
   const handleAssign = (request: PendingRequest) => openAssignModal(request);
   
@@ -420,50 +496,85 @@ export default function PendingRequestsPage() {
     }
   };
 
-  // Stats Cards Component
+  // Stats Cards Component with service breakdown
   const StatsCards = () => (
-    <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-      <Col xs={12} sm={6}>
-        <Card style={{ borderRadius: 12, textAlign: 'center' }}>
-          <Statistic
-            title="Total Workers"
-            value={workerStats.totalWorkers}
-            prefix={<TeamOutlined />}
-            valueStyle={{ color: token.colorPrimary }}
-          />
-        </Card>
-      </Col>
-      <Col xs={12} sm={6}>
-        <Card style={{ borderRadius: 12, textAlign: 'center' }}>
-          <Statistic
-            title="Available"
-            value={workerStats.availableWorkers}
-            prefix={<CheckCircleOutlined />}
-            valueStyle={{ color: '#52c41a' }}
-          />
-        </Card>
-      </Col>
-      <Col xs={12} sm={6}>
-        <Card style={{ borderRadius: 12, textAlign: 'center' }}>
-          <Statistic
-            title="Busy"
-            value={workerStats.busyWorkers}
-            prefix={<ClockCircleOutlined />}
-            valueStyle={{ color: '#faad14' }}
-          />
-        </Card>
-      </Col>
-      <Col xs={12} sm={6}>
-        <Card style={{ borderRadius: 12, textAlign: 'center' }}>
-          <Statistic
-            title="Incomplete Jobs"
-            value={workerStats.totalIncompleteJobs}
-            prefix={<WarningOutlined />}
-            valueStyle={{ color: '#ff4d4f' }}
-          />
-        </Card>
-      </Col>
-    </Row>
+    <div>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={6}>
+          <Card style={{ borderRadius: 12, textAlign: 'center' }}>
+            <Statistic
+              title="Total Workers"
+              value={workerStats.totalWorkers}
+              prefix={<TeamOutlined />}
+              valueStyle={{ color: token.colorPrimary }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card style={{ borderRadius: 12, textAlign: 'center' }}>
+            <Statistic
+              title="Available"
+              value={workerStats.availableWorkers}
+              prefix={<CheckCircleOutlined />}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card style={{ borderRadius: 12, textAlign: 'center' }}>
+            <Statistic
+              title="Busy"
+              value={workerStats.busyWorkers}
+              prefix={<ClockCircleOutlined />}
+              valueStyle={{ color: '#faad14' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card style={{ borderRadius: 12, textAlign: 'center' }}>
+            <Statistic
+              title="Incomplete Jobs"
+              value={workerStats.totalIncompleteJobs}
+              prefix={<WarningOutlined />}
+              valueStyle={{ color: '#ff4d4f' }}
+            />
+          </Card>
+        </Col>
+      </Row>
+      
+      {/* Service Breakdown */}
+      {Object.keys(workerStats.workersByService).length > 0 && (
+        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+          <Col span={24}>
+            <Card 
+              size="small" 
+              title="Workers by Service" 
+              style={{ borderRadius: 12 }}
+            >
+              <Space wrap>
+                {Object.entries(workerStats.workersByService).map(([service, count]) => (
+                  <Tag 
+                    key={service} 
+                    color="blue" 
+                    style={{ 
+                      borderRadius: 16, 
+                      padding: '4px 16px',
+                      fontSize: 14,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8
+                    }}
+                  >
+                    <ToolOutlined />
+                    {service}: {count}
+                  </Tag>
+                ))}
+              </Space>
+            </Card>
+          </Col>
+        </Row>
+      )}
+    </div>
   );
 
   // Pending Columns with Assign button
@@ -490,7 +601,7 @@ export default function PendingRequestsPage() {
       width: 120,
       render: (type: string) => (
         <Tag icon={<CarOutlined />} color="blue" style={{ borderRadius: 16, padding: '4px 12px' }}>
-          {type}
+          {SERVICE_DISPLAY_NAMES[type?.toLowerCase()] || type}
         </Tag>
       ),
     },
@@ -605,7 +716,11 @@ export default function PendingRequestsPage() {
       dataIndex: 'type',
       key: 'type',
       width: 100,
-      render: (type: string) => <Tag color="blue">{type}</Tag>,
+      render: (type: string) => (
+        <Tag color="blue">
+          {SERVICE_DISPLAY_NAMES[type?.toLowerCase()] || type}
+        </Tag>
+      ),
     },
     {
       title: 'Mistri',
@@ -722,15 +837,7 @@ export default function PendingRequestsPage() {
 
   // Get service type display name
   const getServiceDisplayName = (serviceType: string) => {
-    const names: Record<string, string> = {
-      'plumber': 'Plumbing',
-      'electrician': 'Electrical',
-      'painter': 'Painting',
-      'cleaning': 'Cleaning',
-      'carpenter': 'Carpentry',
-      'ac_repair': 'AC Repair',
-    };
-    return names[serviceType?.toLowerCase()] || serviceType;
+    return SERVICE_DISPLAY_NAMES[serviceType?.toLowerCase()] || serviceType;
   };
 
   return (
@@ -739,7 +846,7 @@ export default function PendingRequestsPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
             <Title level={3} style={{ margin: 0 }}>Service Request Management</Title>
-            <Text type="secondary">Review and assign service requests to available mistris</Text>
+            <Text type="secondary">Review and assign service requests to available mistris based on their skills</Text>
           </div>
           <Button icon={<ReloadOutlined />} onClick={() => {
             if (activeTab === 'pending') loadPendingRequests();
@@ -753,8 +860,8 @@ export default function PendingRequestsPage() {
         <StatsCards />
 
         <Alert
-          message="How it works"
-          description="Click the 'Assign' button next to any pending request to open the assignment modal. Only mistris with matching service type will be shown."
+          message="Smart Assignment"
+          description="When assigning a request, only mistris with matching skills will be shown. A carpenter cannot be assigned to a plumbing job, and vice versa."
           type="info"
           showIcon
           style={{ marginBottom: 20, borderRadius: 12 }}
@@ -775,7 +882,7 @@ export default function PendingRequestsPage() {
         onOk={confirmAssign}
         onCancel={() => setAssignModalVisible(false)}
         confirmLoading={assigning}
-        width={700}
+        width={800}
         okText="Assign Request"
         cancelText="Cancel"
       >
@@ -784,6 +891,9 @@ export default function PendingRequestsPage() {
             <div style={{ marginBottom: 24 }}>
               <div style={{ background: token.colorPrimaryBg, padding: '12px 16px', borderRadius: 12, marginBottom: 16 }}>
                 <Text strong>Request Details</Text>
+                <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
+                  Service: {getServiceDisplayName(selectedRequest.type)}
+                </Text>
               </div>
 
               {loadingDetails ? (
@@ -799,7 +909,9 @@ export default function PendingRequestsPage() {
                       <Text type="secondary">{selectedRequest.customerPhone}</Text>
                     </Descriptions.Item>
                     <Descriptions.Item label="Service">
-                      <Tag color="blue">{getServiceDisplayName(selectedRequest.type)}</Tag>
+                      <Tag color="blue" style={{ borderRadius: 16, padding: '4px 12px' }}>
+                        <ToolOutlined /> {getServiceDisplayName(selectedRequest.type)}
+                      </Tag>
                     </Descriptions.Item>
                     <Descriptions.Item label="Address">
                       <EnvironmentOutlined style={{ marginRight: 8 }} />
@@ -827,8 +939,8 @@ export default function PendingRequestsPage() {
                     </div>
                   )}
 
-                  {/* Show warning if no mistris available for this service type */}
-                  {filteredMistris.length === 0 && mistris.length > 0 && (
+                  {/* Show warning if no matching mistris available */}
+                  {filteredMistris.length === 0 && allMistris.length > 0 && (
                     <Alert
                       message="No matching mistris found"
                       description={`No ${getServiceDisplayName(selectedRequest.type)} mistris are currently available for assignment.`}
@@ -845,7 +957,7 @@ export default function PendingRequestsPage() {
               <div style={{ background: token.colorPrimaryBg, padding: '12px 16px', borderRadius: 12, marginBottom: 16 }}>
                 <Text strong>Assignment Details</Text>
                 <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
-                  Showing only {getServiceDisplayName(selectedRequest.type)} professionals
+                  Showing only {getServiceDisplayName(selectedRequest.type)} professionals ({filteredMistris.length} available)
                 </Text>
               </div>
 
@@ -858,19 +970,37 @@ export default function PendingRequestsPage() {
                   onChange={setSelectedMistri}
                   showSearch
                   size="large"
-                  notFoundContent={filteredMistris.length === 0 ? `No ${getServiceDisplayName(selectedRequest.type)} mistris available` : 'No mistris found'}
+                  notFoundContent={
+                    filteredMistris.length === 0 
+                      ? `No ${getServiceDisplayName(selectedRequest.type)} mistris available` 
+                      : 'No mistris found'
+                  }
                 >
                   {filteredMistris.map(mistri => (
                     <Select.Option key={mistri.id} value={mistri.id}>
-                      <Space>
-                        <Avatar size="small" style={{ backgroundColor: token.colorPrimary }}>
-                          {mistri.fullName.charAt(0).toUpperCase()}
-                        </Avatar>
-                        <span>{mistri.fullName}</span>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {mistri.isAvailable ? '🟢 Available' : '🔴 Busy'}
-                          {mistri.averageRating && ` ⭐ ${mistri.averageRating}`}
-                          {mistri.currentJobs && mistri.currentJobs > 0 && ` (${mistri.currentJobs} active)`}
+                      <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                        <Space>
+                          <Avatar size="small" style={{ backgroundColor: token.colorPrimary }}>
+                            {mistri.fullName.charAt(0).toUpperCase()}
+                          </Avatar>
+                          <span>{mistri.fullName}</span>
+                          <Tag color={mistri.isAvailable ? 'success' : 'warning'} style={{ borderRadius: 12 }}>
+                            {mistri.isAvailable ? '🟢 Available' : '🔴 Busy'}
+                          </Tag>
+                          {mistri.averageRating && (
+                            <Tag color="gold" style={{ borderRadius: 12 }}>
+                              ⭐ {mistri.averageRating}
+                            </Tag>
+                          )}
+                          {mistri.currentJobs && mistri.currentJobs > 0 && (
+                            <Tag color="blue" style={{ borderRadius: 12 }}>
+                              {mistri.currentJobs} active
+                            </Tag>
+                          )}
+                        </Space>
+                        <Text type="secondary" style={{ fontSize: 11, marginLeft: 36 }}>
+                          {mistri.serviceName || getServiceDisplayName(selectedRequest.type)} • 
+                          {mistri.jobsCompleted !== null && ` ${mistri.jobsCompleted} jobs completed`}
                         </Text>
                       </Space>
                     </Select.Option>

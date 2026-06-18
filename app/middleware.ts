@@ -56,14 +56,14 @@ export function middleware(request: NextRequest) {
   
   // If already logged in and trying to access login page, redirect to admin dashboard
   if (isLoginPage && token) {
-    const url = new URL('/admin/dashboard', request.url);
+    const url = new URL('/dashboard', request.url);
     return NextResponse.redirect(url);
   }
   
   // If accessing root, redirect to admin dashboard if logged in, else login
   if (pathname === '/') {
     if (token) {
-      const url = new URL('/admin/dashboard', request.url);
+      const url = new URL('/dashboard', request.url);
       return NextResponse.redirect(url);
     }
     const url = new URL('/login', request.url);

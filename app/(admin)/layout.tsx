@@ -1,7 +1,8 @@
+// app/admin/layout.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Layout, Menu, Avatar, Dropdown, Badge, Typography, Spin, App as AntdApp } from 'antd';
+import { Layout, Menu, Avatar, Dropdown, Badge, Typography, Spin, App as AntdApp, Button } from 'antd';
 import {
   DashboardOutlined,
   UserOutlined,
@@ -51,6 +52,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [adminUser, setAdminUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [fetchingPending, setFetchingPending] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -74,6 +77,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         }
         const userData = result?.me || result?.user;
         setAdminUser(userData);
+        
+        // Fetch pending count after admin is loaded
+        await fetchPendingCount();
       } catch (error) {
         console.error('Failed to load admin:', error);
         router.push('/login');
@@ -83,6 +89,38 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     };
     loadAdmin();
   }, [mounted, router]);
+
+  // Fetch pending requests count periodically
+  const fetchPendingCount = async () => {
+    if (fetchingPending) return;
+    
+    try {
+      setFetchingPending(true);
+      const response = await api.get('/admin/all-requests?limit=100');
+      
+      if (response.success) {
+        const pending = (response.requests || []).filter((req: any) => {
+          const isPendingStatus = req.status === 'pending';
+          const noMistri = !req.assignedMistriId && !req.mistriName;
+          const notAssigned = req.status !== 'assigned' && req.status !== 'completed' && req.status !== 'canceled';
+          return isPendingStatus && (noMistri || notAssigned);
+        });
+        setPendingCount(pending.length);
+      }
+    } catch (error) {
+      console.error('Failed to fetch pending count:', error);
+    } finally {
+      setFetchingPending(false);
+    }
+  };
+
+  // Poll for pending count every 30 seconds
+  useEffect(() => {
+    if (!mounted || !adminUser) return;
+    
+    const interval = setInterval(fetchPendingCount, 30000);
+    return () => clearInterval(interval);
+  }, [mounted, adminUser]);
 
   const handleMenuClick = ({ key }: { key: string }) => {
     const menuItem = MENU_ITEMS.find(item => item.key === key);
@@ -136,6 +174,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       },
     ],
   };
+
+  // Create menu items with badges
+  const menuItemsWithBadges = MENU_ITEMS.map(item => {
+    if (item.key === '/pending-requests' && pendingCount > 0) {
+      return {
+        ...item,
+        label: (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <span>{item.label}</span>
+            <Badge 
+              count={pendingCount} 
+              style={{ 
+                backgroundColor: '#faad14',
+                color: '#fff',
+                fontSize: 11,
+                fontWeight: 'bold',
+                boxShadow: '0 2px 8px rgba(250, 173, 20, 0.4)',
+              }} 
+            />
+          </div>
+        ),
+      };
+    }
+    return item;
+  });
 
   // Don't render anything on server-side
   if (!mounted) {
@@ -193,7 +256,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             mode="inline"
             selectedKeys={[currentKey]}
             defaultSelectedKeys={['/dashboard']}
-            items={MENU_ITEMS}
+            items={menuItemsWithBadges}
             onClick={handleMenuClick}
             className={styles.menu}
           />
@@ -210,6 +273,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </Text>
             </div>
             <div className={styles.headerRight}>
+              {/* Pending Requests Notification Icon */}
+              <Badge 
+                count={pendingCount} 
+                offset={[-4, 4]}
+                style={{ 
+                  backgroundColor: '#faad14',
+                  color: '#fff',
+                  fontWeight: 'bold',
+                  boxShadow: '0 2px 8px rgba(250, 173, 20, 0.4)',
+                }}
+              >
+                <Button
+                  type="text" 
+                  icon={<ClockCircleOutlined style={{ fontSize: 18, color: '#666' }} />}
+                  onClick={() => router.push('/pending-requests')}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    padding: '0 8px',
+                    height: 40,
+                  }}
+                />
+              </Badge>
+              
               <Dropdown menu={userMenu} trigger={['click']} placement="bottomRight">
                 <div className={styles.userInfo}>
                   <Avatar

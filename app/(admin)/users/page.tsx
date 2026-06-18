@@ -98,7 +98,7 @@ export default function UsersPage() {
       if (searchText) params.append('search', searchText);
       if (roleFilter !== 'all') params.append('role', roleFilter);
       
-      const response = await api.get<UsersResponse>(`/admin/users?${params}`);
+      const response = await api.get<UsersResponse>(`/users?${params}`);
       
       if (response.success) {
         setUsers(response.users);
@@ -281,7 +281,7 @@ export default function UsersPage() {
                   key: 'view-details',
                   label: 'View Details',
                   icon: <UserAddOutlined />,
-                  onClick: () => window.location.href = `/admin/users/${record.id}`,
+                  onClick: () => window.location.href = `/users/${record.id}`,
                 },
                 {
                   key: 'send-message',
