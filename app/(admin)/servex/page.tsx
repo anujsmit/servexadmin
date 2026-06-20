@@ -1,3 +1,4 @@
+// app/admin/servex/page.tsx (or mistris/page.tsx)
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
@@ -17,7 +18,7 @@ import {
   mistriCountsMatcher,
   type MistriCountsPayload,
 } from '../../../_lib/mistris-counts';
-import styles from '../mistris/mistris.module.css';
+import styles from './mistris.module.css';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -107,10 +108,10 @@ export default function MistrisPage() {
     return `/admin/mistris?${p.toString()}`;
   }, [search, page, approvalFilter]);
 
-  const { data, isLoading, mutate } = useSWR<MistrisResponse>(listKey, api.get);
+  const { data, isLoading, mutate } = useSWR<MistrisResponse>(listKey, (url) => api.get(url, true));
 
   const countsSwrKey = useMemo(() => mistriCountsKey(search), [search]);
-  const { data: countsData } = useSWR<MistriCountsPayload>(countsSwrKey, api.get, {
+  const { data: countsData } = useSWR<MistriCountsPayload>(countsSwrKey, (url) => api.get(url, true), {
     dedupingInterval: 3_000,
   });
 
@@ -122,16 +123,16 @@ export default function MistrisPage() {
     try {
       await api.patch(`/admin/mistris/${mistri.id}/toggle-featured`);
       message.success(mistri.isFeatured ? 'Removed from featured' : 'Marked as featured');
-      await mutate();
+      await refreshListAndCounts();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Failed');
+      message.error(err instanceof Error ? err.message : 'Failed to toggle featured status');
     }
   };
 
   const handleApprove = async (mistri: Mistri) => {
     try {
       await api.patch(`/admin/mistris/${mistri.id}/approve`);
-      message.success(`${mistri.fullName} approved`);
+      message.success(`${mistri.fullName} approved successfully`);
       await refreshListAndCounts();
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : 'Failed to approve');
@@ -160,11 +161,11 @@ export default function MistrisPage() {
     if (!editMistri) return;
     try {
       await api.patch(`/admin/mistris/${editMistri.id}/update-service`, values);
-      message.success('Service category updated');
+      message.success('Service category updated successfully');
       setEditMistri(null);
-      await mutate();
+      await refreshListAndCounts();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Failed');
+      message.error(err instanceof Error ? err.message : 'Failed to update service');
     }
   };
 
@@ -218,7 +219,7 @@ export default function MistrisPage() {
       render: (_: unknown, row: Mistri) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Avatar src={row.profilePhotoUrl ?? undefined} size={40}>
-            {row.fullName?.[0]}
+            {row.fullName?.[0]?.toUpperCase()}
           </Avatar>
           <div>
             <Text strong style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -237,7 +238,11 @@ export default function MistrisPage() {
       render: (id: number | null) =>
         id === 1 ? <Tag color="blue">Plumber</Tag>
           : id === 2 ? <Tag color="green">Electrician</Tag>
-            : <Text type="secondary">—</Text>,
+          : id === 3 ? <Tag color="purple">Painter</Tag>
+          : id === 4 ? <Tag color="cyan">Cleaner</Tag>
+          : id === 5 ? <Tag color="orange">Carpenter</Tag>
+          : id === 6 ? <Tag color="red">AC Repair</Tag>
+          : <Text type="secondary">—</Text>,
     },
     {
       title: 'Experience',
@@ -286,6 +291,7 @@ export default function MistrisPage() {
           checked={row.isFeatured}
           size="small"
           checkedChildren={<StarFilled />}
+          unCheckedChildren=""
           onChange={() => toggleFeatured(row)}
         />
       ),
@@ -299,7 +305,7 @@ export default function MistrisPage() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 180,
+      width: 220,
       render: (_: unknown, row: Mistri) => (
         <Space size={4}>
           {/* View ID */}
@@ -348,13 +354,13 @@ export default function MistrisPage() {
   ];
 
   return (
-    <div>
+    <div className={styles.container}>
       <div className={styles.header}>
-        <Title level={4} style={{ margin: 0 }}>ServeX</Title>
-        <Text type="secondary">Manage service providers</Text>
+        <Title level={4} style={{ margin: 0 }}>ServeX Providers</Title>
+        <Text type="secondary">Manage and approve service providers</Text>
       </div>
 
-      <div className={styles.filters} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className={styles.filters}>
         <Input
           placeholder="Search by name or phone..."
           prefix={<SearchOutlined />}
@@ -380,7 +386,7 @@ export default function MistrisPage() {
           pageSize: 20,
           total: data?.pagination.total ?? 0,
           onChange: setPage,
-          showTotal: (t) => `${t} ServeX`,
+          showTotal: (total) => `Total ${total} providers`,
         }}
         className={styles.table}
         size="middle"
@@ -392,13 +398,21 @@ export default function MistrisPage() {
         open={!!editMistri}
         onCancel={() => setEditMistri(null)}
         footer={null}
-        destroyOnHidden
+        destroyOnClose
       >
         <Form form={form} layout="vertical" onFinish={handleServiceUpdate} style={{ marginTop: 16 }}>
-          <Form.Item label="Service Category" name="serviceId" rules={[{ required: true }]}>
-            <Select>
+          <Form.Item 
+            label="Service Category" 
+            name="serviceId" 
+            rules={[{ required: true, message: 'Please select a service category' }]}
+          >
+            <Select placeholder="Select service category">
               <Option value={1}>Plumbing</Option>
               <Option value={2}>Electrical</Option>
+              <Option value={3}>Painting</Option>
+              <Option value={4}>Cleaning</Option>
+              <Option value={5}>Carpentry</Option>
+              <Option value={6}>AC Repair</Option>
             </Select>
           </Form.Item>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -416,11 +430,11 @@ export default function MistrisPage() {
         onOk={handleRejectSubmit}
         okText="Reject"
         okButtonProps={{ danger: true }}
-        destroyOnHidden
+        destroyOnClose
       >
         <div style={{ marginTop: 12 }}>
           <Text type="secondary" style={{ display: 'block', marginBottom: 10 }}>
-            Optionally provide a reason. The ServeX provider will see this message.
+            Optionally provide a reason. The provider will see this message.
           </Text>
           <TextArea
             rows={3}
@@ -448,7 +462,7 @@ export default function MistrisPage() {
         onCancel={() => setViewIdMistri(null)}
         footer={null}
         width={640}
-        destroyOnHidden
+        destroyOnClose
       >
         <div style={{ display: 'flex', gap: 16, marginTop: 16, flexWrap: 'wrap' }}>
           {viewIdMistri?.govtIdFrontUrl && (
@@ -458,6 +472,7 @@ export default function MistrisPage() {
                 src={viewIdMistri.govtIdFrontUrl}
                 alt="ID Front"
                 style={{ width: '100%', borderRadius: 8, border: '1px solid #e5e7eb' }}
+                fallback="https://placehold.co/400x300/f3f4f6/9ca3af?text=No+Image"
               />
             </div>
           )}
@@ -468,6 +483,7 @@ export default function MistrisPage() {
                 src={viewIdMistri.govtIdBackUrl}
                 alt="ID Back"
                 style={{ width: '100%', borderRadius: 8, border: '1px solid #e5e7eb' }}
+                fallback="https://placehold.co/400x300/f3f4f6/9ca3af?text=No+Image"
               />
             </div>
           )}

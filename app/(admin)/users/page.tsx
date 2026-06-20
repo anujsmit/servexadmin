@@ -98,7 +98,7 @@ export default function UsersPage() {
       if (searchText) params.append('search', searchText);
       if (roleFilter !== 'all') params.append('role', roleFilter);
       
-      const response = await api.get<UsersResponse>(`/users?${params}`);
+      const response = await api.get<UsersResponse>(`/admin/users?${params}`);
       
       if (response.success) {
         setUsers(response.users);

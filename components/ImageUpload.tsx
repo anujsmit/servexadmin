@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Button, Spin, Typography, App, Image as AntImage, Space } from 'antd';
 import { PlusOutlined, LoadingOutlined, DeleteOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../_lib/api';
@@ -39,9 +39,19 @@ export default function ImageUpload({
 }: ImageUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const { message } = App.useApp();
+
+  // Clear local preview when value changes from outside
+  useEffect(() => {
+    if (value) {
+      // If value is set, clear any local preview
+      setLocalPreviewUrl(null);
+      setError(null);
+    }
+  }, [value]);
 
   const getAspectRatioStyles = () => {
     switch (aspectRatio) {
@@ -58,9 +68,57 @@ export default function ImageUpload({
     }
   };
 
+  const compressImage = (file: File, maxWidth: number = 1200, quality: number = 80): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = document.createElement('img');
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > maxWidth) {
+            const ratio = maxWidth / width;
+            width = maxWidth;
+            height = height * ratio;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Could not get canvas context'));
+            return;
+          }
+          
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          const base64 = canvas.toDataURL('image/jpeg', quality / 100);
+          const base64Data = base64.split(',')[1];
+          resolve(base64Data);
+        };
+        img.onerror = () => {
+          reject(new Error('Failed to load image for compression'));
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => {
+        reject(new Error('Failed to read file'));
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Reset error
+    setError(null);
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
@@ -74,9 +132,9 @@ export default function ImageUpload({
       return;
     }
 
-    // Show preview immediately with compression
+    // Show local preview immediately
     const localPreview = URL.createObjectURL(file);
-    setPreviewUrl(localPreview);
+    setLocalPreviewUrl(localPreview);
     setUploadProgress(0);
 
     setLoading(true);
@@ -106,22 +164,26 @@ export default function ImageUpload({
       clearInterval(progressInterval);
       setUploadProgress(100);
       
-      // Return the CDN URL
-      onChange?.(result.cdnUrl);
-      message.success('Image uploaded successfully');
+      // Call onChange with the CDN URL
+      if (result.cdnUrl) {
+        onChange?.(result.cdnUrl);
+        message.success('Image uploaded successfully');
+      } else {
+        throw new Error('No CDN URL returned');
+      }
       
-      // Clean up preview after a delay
+      // Clean up local preview after successful upload
       setTimeout(() => {
         URL.revokeObjectURL(localPreview);
-        setPreviewUrl(null);
+        setLocalPreviewUrl(null);
         setUploadProgress(0);
       }, 500);
       
     } catch (err) {
       console.error('Upload error:', err);
+      setError(err instanceof Error ? err.message : 'Upload failed');
       message.error(err instanceof Error ? err.message : 'Upload failed');
-      setPreviewUrl(null);
-      setUploadProgress(0);
+      // Keep local preview so user can see what they tried to upload
     } finally {
       setLoading(false);
       onUploadEnd?.();
@@ -129,69 +191,21 @@ export default function ImageUpload({
     }
   };
 
-  // FIXED: Use document.createElement('img') instead of new Image()
-  const compressImage = (file: File, maxWidth: number = 1200, quality: number = 80): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        // Use document.createElement('img') to avoid conflict with Ant Design Image
-        const img = document.createElement('img');
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          
-          // Calculate new dimensions maintaining aspect ratio
-          if (width > maxWidth) {
-            const ratio = maxWidth / width;
-            width = maxWidth;
-            height = height * ratio;
-          }
-          
-          canvas.width = width;
-          canvas.height = height;
-          
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error('Could not get canvas context'));
-            return;
-          }
-          
-          // Enable image smoothing for better quality
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          
-          // Draw image
-          ctx.drawImage(img, 0, 0, width, height);
-          
-          // Convert to base64 with quality
-          const base64 = canvas.toDataURL('image/jpeg', quality / 100);
-          const base64Data = base64.split(',')[1];
-          resolve(base64Data);
-        };
-        img.onerror = () => {
-          reject(new Error('Failed to load image for compression'));
-        };
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => {
-        reject(new Error('Failed to read file'));
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
   const handleClear = () => {
     onChange?.(null);
-    setPreviewUrl(null);
+    setLocalPreviewUrl(null);
     setUploadProgress(0);
+    setError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleRetry = () => {
+    setError(null);
     fileInputRef.current?.click();
   };
 
-  const displayImage = previewUrl || value;
+  // Determine which image to display: local preview > value
+  const displayImage = localPreviewUrl || value;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
@@ -286,10 +300,43 @@ export default function ImageUpload({
                 </Text>
               </div>
             )}
+
+            {/* Error Overlay */}
+            {error && !loading && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(255,0,0,0.1)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+                backdropFilter: 'blur(2px)',
+              }}>
+                <div style={{
+                  background: '#fff',
+                  padding: '12px 24px',
+                  borderRadius: 8,
+                  textAlign: 'center',
+                  maxWidth: '80%',
+                }}>
+                  <Text type="danger" style={{ display: 'block', marginBottom: 8 }}>
+                    ❌ {error}
+                  </Text>
+                  <Button size="small" onClick={handleRetry}>
+                    Retry Upload
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
           
           {/* Action Buttons */}
-          {!disabled && !loading && (
+          {!disabled && !loading && !error && (
             <div style={{
               position: 'absolute',
               top: 12,
@@ -327,7 +374,7 @@ export default function ImageUpload({
           )}
           
           {/* Image Info */}
-          {value && !loading && (
+          {value && !loading && !error && (
             <div style={{
               position: 'absolute',
               bottom: 12,
@@ -342,13 +389,29 @@ export default function ImageUpload({
               </Text>
             </div>
           )}
+
+          {/* Local preview indicator */}
+          {localPreviewUrl && !value && !loading && !error && (
+            <div style={{
+              position: 'absolute',
+              bottom: 12,
+              left: 12,
+              background: 'rgba(255,193,7,0.9)',
+              padding: '4px 12px',
+              borderRadius: 6,
+            }}>
+              <Text style={{ color: '#000', fontSize: 11 }}>
+                ⏳ Pending upload
+              </Text>
+            </div>
+          )}
         </div>
       ) : (
         // Upload Area
         <div
           onClick={() => !disabled && !loading && fileInputRef.current?.click()}
           style={{
-            border: `2px dashed ${loading ? '#e67e22' : '#d9d9d9'}`,
+            border: `2px dashed ${error ? '#ff4d4f' : loading ? '#e67e22' : '#d9d9d9'}`,
             borderRadius: 12,
             padding: '40px 24px',
             display: 'flex',
@@ -357,7 +420,7 @@ export default function ImageUpload({
             justifyContent: 'center',
             gap: 12,
             cursor: disabled || loading ? 'not-allowed' : 'pointer',
-            background: loading ? '#fef9f4' : '#fafafa',
+            background: error ? '#fff2f0' : loading ? '#fef9f4' : '#fafafa',
             transition: 'all 0.3s ease',
             minHeight: 200,
             position: 'relative',
@@ -386,6 +449,39 @@ export default function ImageUpload({
                 <Text type="secondary" style={{ fontSize: 13, marginTop: 8 }}>
                   Uploading... {uploadProgress}%
                 </Text>
+              </div>
+            </>
+          ) : error ? (
+            <>
+              <div style={{
+                width: 64,
+                height: 64,
+                borderRadius: '50%',
+                background: '#fff1f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <span style={{ fontSize: 32 }}>❌</span>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <Text type="danger" strong style={{ display: 'block', marginBottom: 4 }}>
+                  Upload failed
+                </Text>
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  {error}
+                </Text>
+                <Button 
+                  type="primary" 
+                  size="small" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRetry();
+                  }}
+                  style={{ marginTop: 8 }}
+                >
+                  Try Again
+                </Button>
               </div>
             </>
           ) : (
@@ -418,7 +514,7 @@ export default function ImageUpload({
       )}
       
       {/* Image Requirements */}
-      {!displayImage && !loading && (
+      {!displayImage && !loading && !error && (
         <div style={{
           display: 'flex',
           gap: 16,
