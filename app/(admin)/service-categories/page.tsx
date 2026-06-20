@@ -20,8 +20,8 @@ import {
   Tooltip,
   InputNumber,
   Breadcrumb,
-  Empty,
   App,
+  Select,
 } from 'antd';
 import {
   PlusOutlined,
@@ -37,65 +37,76 @@ import {
   ClockCircleOutlined,
   FolderOpenOutlined,
   FileTextOutlined,
+  AppstoreAddOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../../_lib/api';
 import styles from './service-categories.module.css';
 
 const { Title, Text } = Typography;
+const { Option } = Select;
 
-// Level 1: Service Category (Main Folder)
+// ============================================
+// TYPES
+// ============================================
+
+// Level 1: Service Category
 interface ServiceCategory {
   id: number;
-  serviceName: string;
-  description: string;
-  mapIconColor: string;
-  isActive: boolean;
-  iconType: 'custom';
-  iconName: string | null;
-  customIconUrl: string | null;
+  name: string;
+  description: string | null;
+  iconUrl: string | null;
   iconColor: string;
+  isActive: boolean;
+  displayOrder: number;
+  subCategoryCount?: number;
 }
 
-// Level 2: Sub-Category (Sub-Folder)
+// Level 2: Sub-Category
 interface SubCategory {
   id: string;
-  serviceId: number;
+  categoryId: number;
   name: string;
-  description: string;
-  price: string;
+  description: string | null;
   imageUrl: string | null;
   isActive: boolean;
   isPopular: boolean;
-  duration_minutes: number | null;
-  category: string | null;
+  displayOrder: number;
   createdAt: string;
   updatedAt: string;
-  serviceItemsCount?: number; // ✅ Added this field
+  categoryName: string;
+  serviceItemsCount?: number;
 }
 
-// Level 3: Service Item (File)
+// Level 3: Service Item
 interface ServiceItem {
   id: string;
-  platformServiceId: string;
+  subCategoryId: string;
   name: string;
-  description: string;
+  description: string | null;
   price: string;
   durationMinutes: number | null;
   isActive: boolean;
   isPopular: boolean;
   imageUrl: string | null;
+  displayOrder: number;
   createdAt: string;
   updatedAt: string;
+  subCategoryName: string;
+  categoryId: number;
 }
 
-// Navigation state (like file explorer)
+// Navigation state
 interface NavigationState {
   categoryId: number | null;
   categoryName: string | null;
   subCategoryId: string | null;
   subCategoryName: string | null;
 }
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
 export default function ServiceCategoriesPage() {
   const { message } = App.useApp();
@@ -140,44 +151,46 @@ export default function ServiceCategoriesPage() {
   });
 
   // ============================================
-  // FETCH FUNCTIONS
+  // FETCH FUNCTIONS - USING CORRECT API PATHS
   // ============================================
 
   const fetchCategories = async () => {
     setLoading(true);
     try {
-      const response = await api.get('/admin/service-categories');
+      const response = await api.get('/service-categories');
       setCategories(response.categories || []);
     } catch (error) {
       console.error('Failed to fetch categories:', error);
       message.error('Failed to load categories');
+      setCategories([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchSubCategories = async (serviceId: number) => {
+  const fetchSubCategories = async (categoryId: number) => {
     setSubCategoryLoading(true);
     try {
-      const response = await api.get(`/admin/platform-services?serviceId=${serviceId}`);
-      // ✅ The backend now returns serviceItemsCount
-      setSubCategories(response.platformServices || []);
+      const response = await api.get(`/sub-categories?categoryId=${categoryId}`);
+      setSubCategories(response.subCategories || []);
     } catch (error) {
       console.error('Failed to fetch sub-categories:', error);
       message.error('Failed to load sub-categories');
+      setSubCategories([]);
     } finally {
       setSubCategoryLoading(false);
     }
   };
 
-  const fetchServiceItems = async (platformServiceId: string) => {
+  const fetchServiceItems = async (subCategoryId: string) => {
     setServiceItemLoading(true);
     try {
-      const response = await api.get(`/admin/service-items?platformServiceId=${platformServiceId}`);
+      const response = await api.get(`/sub-category-items?subCategoryId=${subCategoryId}`);
       setServiceItems(response.serviceItems || []);
     } catch (error) {
       console.error('Failed to fetch service items:', error);
       message.error('Failed to load service items');
+      setServiceItems([]);
     } finally {
       setServiceItemLoading(false);
     }
@@ -232,7 +245,7 @@ export default function ServiceCategoriesPage() {
             base64 = await compressImage(base64, file.type);
           }
           
-          const response = await api.post('/admin/upload', {
+          const response = await api.post('/upload', {
             fileBase64: base64,
             folder: 'service-icons',
             fileName: file.name,
@@ -256,25 +269,23 @@ export default function ServiceCategoriesPage() {
   const handleSaveCategory = async (values: any) => {
     try {
       const payload = {
-        serviceName: values.serviceName,
-        description: values.description,
-        mapIconColor: values.mapIconColor,
-        isActive: values.isActive,
-        iconType: 'custom',
-        iconName: null,
-        customIconUrl: customIconUrl,
-        iconColor: values.mapIconColor,
+        name: values.name,
+        description: values.description || null,
+        iconUrl: customIconUrl || null,
+        iconColor: values.iconColor || '#1890ff',
+        isActive: values.isActive ?? true,
+        displayOrder: values.displayOrder || 0,
       };
       
       if (editingCategory) {
-        await api.patch(`/admin/service-categories/${editingCategory.id}`, payload);
+        await api.patch(`/service-categories/${editingCategory.id}`, payload);
         message.success('Category updated successfully');
       } else {
-        const response = await api.post('/admin/service-categories', payload);
+        const response = await api.post('/service-categories', payload);
         if (response.category?.id) {
           setNavigation({
             categoryId: response.category.id,
-            categoryName: response.category.serviceName,
+            categoryName: response.category.name,
             subCategoryId: null,
             subCategoryName: null,
           });
@@ -294,7 +305,7 @@ export default function ServiceCategoriesPage() {
 
   const handleDeleteCategory = async (id: number) => {
     try {
-      await api.del(`/admin/service-categories/${id}`);
+      await api.del(`/service-categories/${id}`);
       message.success('Category deleted successfully');
       if (navigation.categoryId === id) {
         setNavigation({
@@ -344,9 +355,9 @@ export default function ServiceCategoriesPage() {
           let base64 = (reader.result as string).split(',')[1];
           base64 = await compressImage(base64, file.type);
           
-          const response = await api.post('/admin/upload', {
+          const response = await api.post('/upload', {
             fileBase64: base64,
-            folder: 'platform-services',
+            folder: 'sub-categories',
             fileName: file.name,
           });
           
@@ -373,26 +384,20 @@ export default function ServiceCategoriesPage() {
 
     try {
       const payload = {
-        serviceId: navigation.categoryId,
+        categoryId: navigation.categoryId,
         name: values.name.trim(),
         description: values.description?.trim() || null,
-        price: 0,
         imageUrl: subCategoryImageUrl || null,
         isActive: values.isActive ?? true,
         isPopular: values.isPopular || false,
-        duration_minutes: null,
-        category: null,
-        thumbnail_url: null,
-        is_featured: false,
+        displayOrder: values.displayOrder || 0,
       };
 
-      console.log('Sub-category payload:', payload);
-
       if (editingSubCategory) {
-        await api.patch(`/admin/platform-services/${editingSubCategory.id}`, payload);
+        await api.patch(`/sub-categories/${editingSubCategory.id}`, payload);
         message.success('Sub-category updated successfully');
       } else {
-        await api.post('/admin/platform-services', payload);
+        await api.post('/sub-categories', payload);
         message.success('Sub-category created successfully');
       }
       
@@ -406,17 +411,13 @@ export default function ServiceCategoriesPage() {
       }
     } catch (error) {
       console.error('Failed to save sub-category:', error);
-      if (error instanceof Error) {
-        message.error(`Failed to save: ${error.message}`);
-      } else {
-        message.error('Failed to save sub-category');
-      }
+      message.error('Failed to save sub-category');
     }
   };
 
   const handleDeleteSubCategory = async (id: string) => {
     try {
-      await api.del(`/admin/platform-services/${id}`);
+      await api.del(`/sub-categories/${id}`);
       message.success('Sub-category deleted successfully');
       if (navigation.subCategoryId === id) {
         setNavigation(prev => ({
@@ -466,7 +467,7 @@ export default function ServiceCategoriesPage() {
           let base64 = (reader.result as string).split(',')[1];
           base64 = await compressImage(base64, file.type);
           
-          const response = await api.post('/admin/upload', {
+          const response = await api.post('/upload', {
             fileBase64: base64,
             folder: 'service-items',
             fileName: file.name,
@@ -495,7 +496,7 @@ export default function ServiceCategoriesPage() {
 
     try {
       const payload = {
-        platformServiceId: navigation.subCategoryId,
+        subCategoryId: navigation.subCategoryId,
         name: values.name.trim(),
         description: values.description?.trim() || null,
         price: values.price,
@@ -503,15 +504,14 @@ export default function ServiceCategoriesPage() {
         isActive: values.isActive ?? true,
         isPopular: values.isPopular || false,
         imageUrl: serviceItemImageUrl || null,
+        displayOrder: values.displayOrder || 0,
       };
 
-      console.log('Service item payload:', payload);
-
       if (editingServiceItem) {
-        await api.patch(`/admin/service-items/${editingServiceItem.id}`, payload);
+        await api.patch(`/sub-category-items/${editingServiceItem.id}`, payload);
         message.success('Service item updated successfully');
       } else {
-        await api.post('/admin/service-items', payload);
+        await api.post('/sub-category-items', payload);
         message.success('Service item created successfully');
       }
       
@@ -522,28 +522,22 @@ export default function ServiceCategoriesPage() {
       
       if (navigation.subCategoryId) {
         fetchServiceItems(navigation.subCategoryId);
-        // Also refresh sub-categories to update the item count
         if (navigation.categoryId) {
           fetchSubCategories(navigation.categoryId);
         }
       }
     } catch (error) {
       console.error('Failed to save service item:', error);
-      if (error instanceof Error) {
-        message.error(`Failed to save: ${error.message}`);
-      } else {
-        message.error('Failed to save service item');
-      }
+      message.error('Failed to save service item');
     }
   };
 
   const handleDeleteServiceItem = async (id: string) => {
     try {
-      await api.del(`/admin/service-items/${id}`);
+      await api.del(`/sub-category-items/${id}`);
       message.success('Service item deleted successfully');
       if (navigation.subCategoryId) {
         fetchServiceItems(navigation.subCategoryId);
-        // Also refresh sub-categories to update the item count
         if (navigation.categoryId) {
           fetchSubCategories(navigation.categoryId);
         }
@@ -617,10 +611,10 @@ export default function ServiceCategoriesPage() {
       width: 80,
       render: (_, record) => (
         <div className={styles.iconCell}>
-          {record.customIconUrl ? (
+          {record.iconUrl ? (
             <img 
-              src={record.customIconUrl} 
-              alt={record.serviceName}
+              src={record.iconUrl} 
+              alt={record.name}
               style={{ width: 44, height: 44, objectFit: 'contain' }}
               onError={(e) => {
                 e.currentTarget.style.display = 'none';
@@ -632,7 +626,7 @@ export default function ServiceCategoriesPage() {
               style={{ backgroundColor: `${record.iconColor || '#1890ff'}20` }}
             >
               <span style={{ color: record.iconColor || '#1890ff', fontSize: 20 }}>
-                {record.serviceName?.charAt(0).toUpperCase()}
+                {record.name?.charAt(0).toUpperCase()}
               </span>
             </div>
           )}
@@ -641,7 +635,7 @@ export default function ServiceCategoriesPage() {
     },
     { 
       title: 'Category Name', 
-      dataIndex: 'serviceName', 
+      dataIndex: 'name', 
       key: 'name', 
       render: (name: string) => <Text strong>{name}</Text>
     },
@@ -651,6 +645,13 @@ export default function ServiceCategoriesPage() {
       key: 'description', 
       ellipsis: true,
       render: (desc: string) => desc || <Text type="secondary">No description</Text>
+    },
+    {
+      title: 'Sub-Categories',
+      dataIndex: 'subCategoryCount',
+      key: 'subCategoryCount',
+      width: 120,
+      render: (count: number) => <Tag color="blue">{count || 0}</Tag>,
     },
     {
       title: 'Status',
@@ -666,7 +667,7 @@ export default function ServiceCategoriesPage() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 200,
+      width: 250,
       fixed: 'right',
       render: (_, record) => (
         <Space>
@@ -677,7 +678,7 @@ export default function ServiceCategoriesPage() {
               onClick={() => {
                 setNavigation({
                   categoryId: record.id,
-                  categoryName: record.serviceName,
+                  categoryName: record.name,
                   subCategoryId: null,
                   subCategoryName: null,
                 });
@@ -692,13 +693,14 @@ export default function ServiceCategoriesPage() {
               icon={<EditOutlined />} 
               onClick={() => {
                 setEditingCategory(record);
-                setCustomIconUrl(record.customIconUrl);
+                setCustomIconUrl(record.iconUrl);
                 setImageError(false);
                 categoryForm.setFieldsValue({
-                  serviceName: record.serviceName,
+                  name: record.name,
                   description: record.description,
-                  mapIconColor: record.iconColor || '#1890ff',
+                  iconColor: record.iconColor || '#1890ff',
                   isActive: record.isActive,
+                  displayOrder: record.displayOrder,
                 });
                 setPreviewColor(record.iconColor || '#1890ff');
                 setCategoryModalVisible(true);
@@ -708,7 +710,7 @@ export default function ServiceCategoriesPage() {
           <Tooltip title="Delete Category">
             <Popconfirm 
               title="Delete Category" 
-              description={`Are you sure you want to delete "${record.serviceName}"? This will also delete all sub-categories and service items.`}
+              description={`Are you sure you want to delete "${record.name}"? This will also delete all sub-categories and service items.`}
               onConfirm={() => handleDeleteCategory(record.id)}
               okText="Delete"
               cancelText="Cancel"
@@ -778,7 +780,7 @@ export default function ServiceCategoriesPage() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 200,
+      width: 250,
       fixed: 'right',
       render: (_, record) => (
         <Space>
@@ -809,6 +811,7 @@ export default function ServiceCategoriesPage() {
                   description: record.description,
                   isActive: record.isActive,
                   isPopular: record.isPopular,
+                  displayOrder: record.displayOrder,
                 });
                 setSubCategoryModalVisible(true);
               }} 
@@ -899,7 +902,7 @@ export default function ServiceCategoriesPage() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 140,
+      width: 200,
       fixed: 'right',
       render: (_, record) => (
         <Space>
@@ -917,6 +920,7 @@ export default function ServiceCategoriesPage() {
                   durationMinutes: record.durationMinutes,
                   isActive: record.isActive,
                   isPopular: record.isPopular,
+                  displayOrder: record.displayOrder,
                 });
                 setServiceItemModalVisible(true);
               }} 
@@ -982,9 +986,9 @@ export default function ServiceCategoriesPage() {
         <div>
           <Title level={4} style={{ margin: 0 }}>
             <FolderOpenOutlined style={{ marginRight: 8, color: '#faad14' }} />
-            Categories
+            Service Categories
           </Title>
-          <Text type="secondary">Main service categories (folders)</Text>
+          <Text type="secondary">Level 1: Main service categories</Text>
         </div>
         <Button 
           type="primary" 
@@ -996,7 +1000,8 @@ export default function ServiceCategoriesPage() {
             categoryForm.resetFields();
             categoryForm.setFieldsValue({ 
               isActive: true, 
-              mapIconColor: '#1890ff'
+              iconColor: '#1890ff',
+              displayOrder: 0,
             });
             setPreviewColor('#1890ff');
             setCategoryModalVisible(true);
@@ -1040,20 +1045,20 @@ export default function ServiceCategoriesPage() {
                 setServiceItems([]);
               }}
             >
-              Back
+              Back to Categories
             </Button>
             <div>
               <Title level={4} style={{ margin: 0 }}>
                 <FolderOutlined style={{ marginRight: 8, color: '#faad14' }} />
                 {navigation.categoryName}
               </Title>
-              <Text type="secondary">Sub-categories (sub-folders)</Text>
+              <Text type="secondary">Level 2: Sub-categories - {subCategories.length} total</Text>
             </div>
           </div>
         </div>
         <Button 
           type="primary" 
-          icon={<PlusOutlined />} 
+          icon={<AppstoreAddOutlined />} 
           onClick={() => {
             setEditingSubCategory(null);
             setSubCategoryImageUrl(null);
@@ -1062,6 +1067,7 @@ export default function ServiceCategoriesPage() {
             subCategoryForm.setFieldsValue({ 
               isActive: true,
               isPopular: false,
+              displayOrder: 0,
             });
             setSubCategoryModalVisible(true);
           }}
@@ -1102,14 +1108,14 @@ export default function ServiceCategoriesPage() {
                 setServiceItems([]);
               }}
             >
-              Back
+              Back to Sub-Categories
             </Button>
             <div>
               <Title level={4} style={{ margin: 0 }}>
                 <FileOutlined style={{ marginRight: 8, color: '#1890ff' }} />
                 {navigation.subCategoryName}
               </Title>
-              <Text type="secondary">Service items (files)</Text>
+              <Text type="secondary">Level 3: Service items - {serviceItems.length} total</Text>
             </div>
           </div>
         </div>
@@ -1124,6 +1130,7 @@ export default function ServiceCategoriesPage() {
             serviceItemForm.setFieldsValue({ 
               isActive: true,
               isPopular: false,
+              displayOrder: 0,
             });
             setServiceItemModalVisible(true);
           }}
@@ -1181,12 +1188,12 @@ export default function ServiceCategoriesPage() {
           form={categoryForm} 
           layout="vertical" 
           onFinish={handleSaveCategory} 
-          initialValues={{ isActive: true, mapIconColor: '#1890ff' }}
+          initialValues={{ isActive: true, iconColor: '#1890ff', displayOrder: 0 }}
         >
           <Row gutter={24}>
             <Col span={12}>
               <Form.Item 
-                name="serviceName" 
+                name="name" 
                 label="Category Name" 
                 rules={[{ required: true, message: 'Please enter category name' }]}
               >
@@ -1195,7 +1202,7 @@ export default function ServiceCategoriesPage() {
             </Col>
             <Col span={12}>
               <Form.Item 
-                name="mapIconColor" 
+                name="iconColor" 
                 label="Icon Color"
                 rules={[{ required: true, message: 'Please select icon color' }]}
               >
@@ -1206,7 +1213,7 @@ export default function ServiceCategoriesPage() {
                     onChange={(e) => {
                       const color = e.target.value;
                       setPreviewColor(color);
-                      categoryForm.setFieldsValue({ mapIconColor: color });
+                      categoryForm.setFieldsValue({ iconColor: color });
                     }}
                     style={{ 
                       width: 60, 
@@ -1222,7 +1229,7 @@ export default function ServiceCategoriesPage() {
                     onChange={(e) => {
                       const color = e.target.value;
                       setPreviewColor(color);
-                      categoryForm.setFieldsValue({ mapIconColor: color });
+                      categoryForm.setFieldsValue({ iconColor: color });
                     }}
                     placeholder="#000000"
                     style={{ width: 120 }}
@@ -1234,6 +1241,10 @@ export default function ServiceCategoriesPage() {
 
           <Form.Item name="description" label="Description">
             <Input.TextArea rows={3} placeholder="Brief description of this service category" />
+          </Form.Item>
+
+          <Form.Item name="displayOrder" label="Display Order">
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
           </Form.Item>
 
           <Form.Item label="Category Icon">
@@ -1330,13 +1341,13 @@ export default function ServiceCategoriesPage() {
                   style={{ backgroundColor: `${previewColor}20` }}
                 >
                   <span style={{ color: previewColor, fontSize: 24 }}>
-                    {categoryForm.getFieldValue('serviceName')?.charAt(0).toUpperCase() || '?'}
+                    {categoryForm.getFieldValue('name')?.charAt(0).toUpperCase() || '?'}
                   </span>
                 </div>
               )}
               <div>
                 <Text strong style={{ fontSize: 16 }}>
-                  {categoryForm.getFieldValue('serviceName') || 'Category Name'}
+                  {categoryForm.getFieldValue('name') || 'Category Name'}
                 </Text>
                 <br />
                 <Text type="secondary" style={{ fontSize: 12 }}>
@@ -1365,7 +1376,7 @@ export default function ServiceCategoriesPage() {
       </Modal>
 
       {/* ========================================== */}
-      {/* LEVEL 2: SUB-CATEGORY MODAL (Simplified) */}
+      {/* LEVEL 2: SUB-CATEGORY MODAL */}
       {/* ========================================== */}
 
       <Modal
@@ -1383,7 +1394,7 @@ export default function ServiceCategoriesPage() {
           subCategoryForm.resetFields();
         }}
         footer={null}
-        width={500}
+        width={600}
         destroyOnClose
       >
         <Form 
@@ -1393,6 +1404,7 @@ export default function ServiceCategoriesPage() {
           initialValues={{ 
             isActive: true,
             isPopular: false,
+            displayOrder: 0,
           }}
         >
           <Form.Item 
@@ -1401,22 +1413,100 @@ export default function ServiceCategoriesPage() {
             rules={[
               { required: true, message: 'Please enter sub-category name' },
               { min: 2, message: 'Name must be at least 2 characters' },
-              { max: 50, message: 'Name must be less than 50 characters' }
+              { max: 100, message: 'Name must be less than 100 characters' }
             ]}
           >
             <Input 
-              placeholder="e.g., Tap, Pipe, Fittings" 
+              placeholder="e.g., Tap, Basin, Pipe" 
               size="large"
               prefix={<FolderOutlined style={{ color: '#bfbfbf' }} />}
               autoFocus
             />
           </Form.Item>
 
-          <Form.Item name="description" label="Description (Optional)">
+          <Form.Item name="description" label="Description">
             <Input.TextArea 
               rows={2} 
-              placeholder="Brief description of this sub-category (optional)" 
+              placeholder="Brief description of this sub-category" 
             />
+          </Form.Item>
+
+          <Form.Item name="displayOrder" label="Display Order">
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
+          </Form.Item>
+
+          <Form.Item label="Image">
+            <Upload.Dragger
+              accept="image/png,image/jpeg,image/webp"
+              showUploadList={false}
+              customRequest={({ file, onSuccess }) => {
+                handleSubCategoryImageUpload(file as File).then(onSuccess);
+              }}
+              style={{ borderRadius: 12 }}
+            >
+              <p className="ant-upload-drag-icon">
+                <UploadOutlined style={{ color: '#e67e22' }} />
+              </p>
+              <p className="ant-upload-text">Click or drag file to upload</p>
+              <p className="ant-upload-hint">
+                Support for PNG, JPG, WebP. Max size: 2MB
+              </p>
+            </Upload.Dragger>
+            
+            {subCategoryImageUrl && (
+              <div className={styles.customIconPreview}>
+                <div className={styles.customIconPreviewInner}>
+                  <div style={{ position: 'relative' }}>
+                    <img 
+                      src={subCategoryImageUrl} 
+                      alt="Sub-category" 
+                      style={{ 
+                        width: 80, 
+                        height: 80, 
+                        objectFit: 'cover',
+                        borderRadius: 8,
+                        border: '1px solid #e8edf2',
+                        padding: 4,
+                        background: '#ffffff',
+                      }}
+                      onError={handleImageError}
+                    />
+                    {subCategoryImageError && (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: -8,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: '#ff4d4f',
+                        color: '#fff',
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        fontSize: 10,
+                        whiteSpace: 'nowrap',
+                      }}>
+                        <WarningOutlined /> Invalid format
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {subCategoryImageError ? 'Please re-upload a valid image' : 'Image uploaded successfully'}
+                    </Text>
+                    <Button 
+                      danger 
+                      icon={<DeleteIcon />} 
+                      size="small" 
+                      onClick={() => {
+                        setSubCategoryImageUrl(null);
+                        setSubCategoryImageError(false);
+                      }}
+                    >
+                      Remove Image
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </Form.Item>
 
           <Row gutter={24}>
@@ -1474,6 +1564,7 @@ export default function ServiceCategoriesPage() {
           initialValues={{ 
             isActive: true,
             isPopular: false,
+            displayOrder: 0,
           }}
         >
           <Form.Item 
@@ -1486,6 +1577,10 @@ export default function ServiceCategoriesPage() {
 
           <Form.Item name="description" label="Description">
             <Input.TextArea rows={3} placeholder="Detailed description of this service" />
+          </Form.Item>
+
+          <Form.Item name="displayOrder" label="Display Order">
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
           </Form.Item>
 
           <Row gutter={24}>
