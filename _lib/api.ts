@@ -3,17 +3,31 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 // Helper to get auth token
-// Make sure you're sending the token correctly
 const getAuthToken = () => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('admin_token');
     if (token) return token;
     
-    // Also check cookies
+    // Check cookies as fallback
     const cookieMatch = document.cookie.match(/admin_token=([^;]+)/);
     if (cookieMatch) return cookieMatch[1];
   }
   return null;
+};
+
+/**
+ * Universal safe parser that ensures structural variations from backend 
+ * controllers (standalone arrays, data objects, or named wrappers) 
+ * are standardized before reaching components.
+ */
+const parseResponseData = (res: any) => {
+  if (!res) return res;
+  
+  // If the backend wraps payload inside an envelope object with a 'data' key or similar structure
+  if (res.data !== undefined) return res.data;
+  
+  // Return the raw structure if it's already an array or a standardized format
+  return res;
 };
 
 export const api = {
@@ -38,7 +52,7 @@ export const api = {
     });
 
     if (response.status === 401) {
-      // Token expired or invalid, redirect to login
+      // Token expired or invalid, clear credentials and redirect to login
       if (typeof window !== 'undefined') {
         localStorage.removeItem('admin_token');
         localStorage.removeItem('admin_user');
@@ -51,7 +65,8 @@ export const api = {
       throw new Error(`API Error: ${response.status}`);
     }
     
-    return response.json();
+    const json = await response.json();
+    return parseResponseData(json);
   },
   
   post: async <T>(url: string, data?: any, requiresAuth: boolean = true): Promise<T> => {
@@ -86,7 +101,8 @@ export const api = {
       throw new Error(`API Error: ${response.status}`);
     }
     
-    return response.json();
+    const json = await response.json();
+    return parseResponseData(json);
   },
   
   patch: async <T>(url: string, data?: any, requiresAuth: boolean = true): Promise<T> => {
@@ -121,7 +137,8 @@ export const api = {
       throw new Error(`API Error: ${response.status}`);
     }
     
-    return response.json();
+    const json = await response.json();
+    return parseResponseData(json);
   },
   
   del: async <T>(url: string, requiresAuth: boolean = true): Promise<T> => {
@@ -155,6 +172,7 @@ export const api = {
       throw new Error(`API Error: ${response.status}`);
     }
     
-    return response.json();
+    const json = await response.json();
+    return parseResponseData(json);
   },
 };

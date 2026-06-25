@@ -39,7 +39,6 @@ const MENU_ITEMS = [
   { key: '/users', icon: <UserOutlined />, label: 'Users', path: '/users' },
   { key: '/servex', icon: <TeamOutlined />, label: 'ServeX (Mistris)', path: '/servex' },
   { key: '/service-categories', icon: <AppstoreOutlined />, label: 'Service Categories', path: '/service-categories' },
-  { key: '/platform-services', icon: <ToolOutlined />, label: 'Platform Services', path: '/platform-services' },
   { key: '/hero-banners', icon: <PictureOutlined />, label: 'Hero Banners', path: '/hero-banners' },
   { key: '/ratings', icon: <StarOutlined />, label: 'Ratings', path: '/ratings' },
   { key: '/service-requests', icon: <FileTextOutlined />, label: 'Service Requests', path: '/service-requests' },
