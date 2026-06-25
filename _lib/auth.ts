@@ -20,15 +20,15 @@ export interface AdminLoginResponse {
 
 // Admin login with password
 export async function adminLoginWithPassword(phone: string, password: string, twoFactorToken?: string, backupCode?: string) {
-  const response = await fetch(`${API_BASE}/admin/auth/login-with-password`, {  // Changed to match backend route
+  const response = await fetch(`${API_BASE}/admin/auth/login-with-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone, password, twoFactorToken, backupCode }),
-    credentials: 'include', // Important for cookies
+    credentials: 'include',
   });
   
   const data = await response.json();
-  console.log('Login response:', { status: response.status, data }); // Debug log
+  console.log('Login response:', { status: response.status, data });
   
   if (!response.ok) {
     throw new Error(data.message || 'Login failed');
@@ -37,13 +37,12 @@ export async function adminLoginWithPassword(phone: string, password: string, tw
   return data;
 }
 
-
 // Check if admin has 2FA enabled
 export const checkAdminTwoFactorStatus = async (phone: string): Promise<{ twoFactorEnabled: boolean }> => {
   try {
     console.log('Checking 2FA status for:', phone);
     
-    const response = await fetch(`${API_BASE}/admin/auth/check-two-factor-status`, {  // This one is correct
+    const response = await fetch(`${API_BASE}/admin/auth/check-two-factor-status`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -116,3 +115,63 @@ export const adminLogout = async (): Promise<void> => {
 
 // Clear session (alias for adminLogout)
 export const clearSession = adminLogout;
+
+// ✅ ADD THIS MISSING FUNCTION
+/**
+ * Check if the current admin session is valid
+ * Returns authenticated status and user data if available
+ */
+export const checkSession = async (): Promise<{
+  authenticated: boolean;
+  user?: any;
+}> => {
+  try {
+    const token = localStorage.getItem('admin_token');
+    
+    // If no token, session is not authenticated
+    if (!token) {
+      console.log('No admin token found, session not authenticated');
+      return { authenticated: false };
+    }
+
+    // Verify token with the server
+    const response = await fetch(`${API_BASE}/admin/me`, {
+      credentials: 'include',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      // If 401, token is invalid/expired
+      if (response.status === 401) {
+        console.log('Invalid or expired token, clearing session');
+        await clearSession();
+      }
+      return { authenticated: false };
+    }
+
+    const userData = await response.json();
+    console.log('Session check successful for user:', userData.fullName);
+    
+    return {
+      authenticated: true,
+      user: userData,
+    };
+  } catch (error) {
+    console.error('Error checking session:', error);
+    return { authenticated: false };
+  }
+};
+
+// Optional: Add a convenience function to get the auth token
+export const getAuthToken = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('admin_token');
+};
+
+export const isAuthenticated = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return !!localStorage.getItem('admin_token');
+};
