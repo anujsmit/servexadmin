@@ -54,7 +54,7 @@ export default function AuditLogsPage() {
     useCallback(() => {
       const p = new URLSearchParams({ page: String(page), limit: '50' });
       if (entityType) p.set('entityType', entityType);
-      return `/api/admin/audit-logs?${p.toString()}`;
+      return `/admin/audit-logs?${p.toString()}`;
     }, [entityType, page]),
     api.get
   );

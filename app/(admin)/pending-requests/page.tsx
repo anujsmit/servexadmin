@@ -28,6 +28,12 @@ import {
   Tooltip,
   theme,
   App,
+  Collapse,
+  Checkbox,
+  Form,
+  List,
+  Radio,
+  Progress,
 } from 'antd';
 import {
   CheckOutlined,
@@ -47,14 +53,28 @@ import {
   EyeOutlined,
   UnorderedListOutlined,
   ToolOutlined,
+  ShoppingCartOutlined,
+  FileTextOutlined,
+  PlusOutlined,
+  MinusOutlined,
+  ExclamationCircleOutlined,
+  SaveOutlined,
+  AppstoreOutlined,
+  ProfileOutlined,
+  ThunderboltOutlined,
+  CrownOutlined,
 } from '@ant-design/icons';
-import { api } from '../../../_lib/api';
+import { api, ApiError } from '../../../_lib/api';
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
 const { useToken } = theme;
+const { Panel } = Collapse;
 
-// Types
+// ============================================
+// TYPES
+// ============================================
+
 interface PendingRequest {
   id: string;
   type: string;
@@ -91,6 +111,7 @@ interface Mistri {
   jobsCompleted: number | null;
   currentJobs?: number;
   skills?: string[];
+  distance?: number;
 }
 
 interface AssignedRequest {
@@ -160,6 +181,22 @@ const SERVICE_DISPLAY_NAMES: Record<string, string> = {
   'ac_repair': 'AC Repair',
 };
 
+// Category Colors
+const CATEGORY_COLORS: Record<string, string> = {
+  'Plumber': '#e67e22',
+  'Plumbing': '#e67e22',
+  'Electrician': '#f1c40f',
+  'Electrical': '#f1c40f',
+  'Painter': '#3498db',
+  'Painting': '#3498db',
+  'Carpenter': '#2ecc71',
+  'Carpentry': '#2ecc71',
+  'Cleaner': '#1abc9c',
+  'Cleaning': '#1abc9c',
+  'AC Repair': '#9b59b6',
+  'General': '#95a5a6',
+};
+
 function PendingRequestsContent() {
   const { token } = useToken();
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
@@ -190,6 +227,7 @@ function PendingRequestsContent() {
     totalIncompleteJobs: 0,
     workersByService: {},
   });
+  const [viewType, setViewType] = useState<'service_request'>('service_request');
 
   useEffect(() => {
     loadPendingRequests();
@@ -304,6 +342,7 @@ function PendingRequestsContent() {
         );
         setAllMistris(mistrisWithJobs);
 
+        // Filter based on current selection
         if (selectedRequest) {
           filterMistrisByService(mistrisWithJobs, selectedRequest.type);
         }
@@ -340,58 +379,56 @@ function PendingRequestsContent() {
     setFilteredMistris(filtered);
   };
 
-const loadRequestDetails = async (requestId: string) => {
-  setLoadingDetails(true);
-  try {
-    console.log('🔍 Loading request details for ID:', requestId);
+  const loadRequestDetails = async (requestId: string) => {
+    setLoadingDetails(true);
+    try {
+      console.log('🔍 Loading request details for ID:', requestId);
 
-    const response = await api.get(`/admin/pending-requests/${requestId}`);
-    console.log('📦 Response from /admin/pending-requests:', response);
+      const response = await api.get(`/admin/pending-requests/${requestId}`);
+      console.log('📦 Response from /admin/pending-requests:', response);
 
-    if (response.success) {
-      setRequestDetails(response.request);
+      if (response.success) {
+        setRequestDetails(response.request);
 
-      let services = response.platformServices || response.request?.platformServices || [];
-      let totalAmount = 0;
+        let services = response.platformServices || response.request?.platformServices || [];
+        let totalAmount = 0;
 
-      if (services.length > 0) {
-        totalAmount = services.reduce(
-          (sum: number, service: PlatformService) => sum + parseFloat(service.price || '0'),
-          0
-        );
-        console.log('💰 Total from platform services:', totalAmount);
+        if (services.length > 0) {
+          totalAmount = services.reduce(
+            (sum: number, service: PlatformService) => sum + parseFloat(service.price || '0'),
+            0
+          );
+          console.log('💰 Total from platform services:', totalAmount);
+        }
+
+        const directAmount = response.request?.paymentAmount || response.paymentAmount;
+        if (directAmount && !totalAmount) {
+          totalAmount = parseFloat(directAmount);
+          console.log('💰 Using direct paymentAmount:', totalAmount);
+        }
+
+        if (!totalAmount) {
+          const defaultAmounts: Record<string, number> = {
+            'plumber': 1500,
+            'electrician': 2000,
+            'painter': 1800,
+            'carpenter': 2200,
+            'cleaning': 1200,
+            'ac_repair': 2500,
+          };
+          const typeLower = response.request?.type?.toLowerCase() || '';
+          totalAmount = defaultAmounts[typeLower] || 1500;
+          console.log('💰 Using default amount for type:', typeLower, totalAmount);
+        }
+
+        setPaymentAmount(Math.round(totalAmount));
       }
-
-      // ✅ Check if the request has a payment amount directly
-      const directAmount = response.request?.paymentAmount || response.paymentAmount;
-      if (directAmount && !totalAmount) {
-        totalAmount = parseFloat(directAmount);
-        console.log('💰 Using direct paymentAmount:', totalAmount);
-      }
-
-      // ✅ If still no amount, use default based on service type
-      if (!totalAmount) {
-        const defaultAmounts: Record<string, number> = {
-          'plumber': 1500,
-          'electrician': 2000,
-          'painter': 1800,
-          'carpenter': 2200,
-          'cleaning': 1200,
-          'ac_repair': 2500,
-        };
-        const typeLower = response.request?.type?.toLowerCase() || '';
-        totalAmount = defaultAmounts[typeLower] || 1500;
-        console.log('💰 Using default amount for type:', typeLower, totalAmount);
-      }
-
-      setPaymentAmount(Math.round(totalAmount));
+    } catch (error: any) {
+      console.error('Failed to load request details:', error);
+    } finally {
+      setLoadingDetails(false);
     }
-  } catch (error: any) {
-    console.error('Failed to load request details:', error);
-  } finally {
-    setLoadingDetails(false);
-  }
-};
+  };
 
   const loadAssignedMistriDetails = async (mistriId: string) => {
     setLoadingMistriDetails(true);
@@ -409,6 +446,7 @@ const loadRequestDetails = async (requestId: string) => {
 
   const handleViewDetails = async (record: AssignedRequest) => {
     setSelectedAssignedRequest(record);
+    setViewType('service_request');
     if (record.assignedMistriId) {
       await loadAssignedMistriDetails(record.assignedMistriId);
     } else {
@@ -423,6 +461,7 @@ const loadRequestDetails = async (requestId: string) => {
     setAdminNotes('');
     setRequestDetails(null);
     setPaymentAmount(0);
+    setViewType('service_request');
     setAssignModalVisible(true);
 
     await loadAvailableMistris();
@@ -452,32 +491,33 @@ const loadRequestDetails = async (requestId: string) => {
       message.error('Please select a mistri');
       return;
     }
-    if (!paymentAmount || paymentAmount <= 0) {
-      message.error('Please enter a valid payment amount');
-      return;
-    }
 
     setAssigning(true);
     try {
-      const requestData = {
-        mistriId: selectedMistri,
-        paymentAmount: paymentAmount,
-        adminNotes: adminNotes,
-      };
-      const response = await api.post(`/admin/pending-requests/${selectedRequest!.id}/assign`, requestData);
+      let response;
 
-      if (response.success) {
-        message.success('Request assigned successfully');
-        setAssignModalVisible(false);
-        loadPendingRequests();
-        loadWorkerStats();
-        if (activeTab === 'all') loadAllRequests();
-      } else {
-        message.error(response.message || 'Failed to assign request');
+      if (viewType === 'service_request' && selectedRequest) {
+        // Assign service request
+        const requestData = {
+          mistriId: selectedMistri,
+          paymentAmount: paymentAmount,
+          adminNotes: adminNotes,
+        };
+        response = await api.post(`/admin/pending-requests/${selectedRequest.id}/assign`, requestData);
+
+        if (response.success) {
+          message.success('Request assigned successfully');
+          setAssignModalVisible(false);
+          await loadPendingRequests();
+          await loadAllRequests();
+          loadWorkerStats();
+        } else {
+          message.error(response.message || 'Failed to assign request');
+        }
       }
     } catch (error: any) {
-      console.error('Failed to assign request:', error);
-      message.error(error?.response?.data?.message || error?.message || 'Failed to assign request');
+      console.error('Failed to assign:', error);
+      message.error(error?.message || 'Failed to assign');
     } finally {
       setAssigning(false);
     }
@@ -499,7 +539,7 @@ const loadRequestDetails = async (requestId: string) => {
       }
     } catch (error: any) {
       console.error('Failed to reject request:', error);
-      message.error(error?.response?.data?.message || error?.message || 'Failed to reject request');
+      message.error(error?.message || 'Failed to reject request');
     } finally {
       setAssigning(false);
     }
@@ -507,6 +547,28 @@ const loadRequestDetails = async (requestId: string) => {
 
   const getServiceDisplayName = (serviceType: string) => {
     return SERVICE_DISPLAY_NAMES[serviceType?.toLowerCase()] || serviceType;
+  };
+
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      'pending': 'orange',
+      'assigned': 'blue',
+      'completed': 'green',
+      'canceled': 'red',
+      'rejected': 'red',
+    };
+    return colors[status] || 'default';
+  };
+
+  const getStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      'pending': 'Pending',
+      'assigned': 'Assigned',
+      'completed': 'Completed',
+      'canceled': 'Cancelled',
+      'rejected': 'Rejected',
+    };
+    return labels[status] || status;
   };
 
   // Stats Cards Component
@@ -555,7 +617,7 @@ const loadRequestDetails = async (requestId: string) => {
     </Row>
   );
 
-  // Pending Columns
+  // Pending Requests Columns
   const pendingColumns = [
     {
       title: 'Customer',
@@ -682,7 +744,7 @@ const loadRequestDetails = async (requestId: string) => {
       dataIndex: 'customerName',
       key: 'customerName',
       width: 160,
-      render: (name: string, record: AssignedRequest) => (
+      render: (name: string, record: any) => (
         <Space direction="vertical" size={0}>
           <Text strong>{name}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>{record.customerPhone}</Text>
@@ -693,9 +755,9 @@ const loadRequestDetails = async (requestId: string) => {
       title: 'Service',
       dataIndex: 'type',
       key: 'type',
-      width: 100,
+      width: 120,
       render: (type: string) => (
-        <Tag color="blue">
+        <Tag icon={<CarOutlined />} color="blue">
           {getServiceDisplayName(type)}
         </Tag>
       ),
@@ -705,7 +767,7 @@ const loadRequestDetails = async (requestId: string) => {
       dataIndex: 'mistriName',
       key: 'mistriName',
       width: 140,
-      render: (name: string, record: AssignedRequest) => (
+      render: (name: string, record: any) => (
         name ? (
           <Space>
             <Avatar size="small" style={{ backgroundColor: '#e67e22' }}>
@@ -717,13 +779,15 @@ const loadRequestDetails = async (requestId: string) => {
       ),
     },
     {
-      title: 'Payment',
+      title: 'Total',
       dataIndex: 'paymentAmount',
       key: 'paymentAmount',
       width: 120,
-      render: (amount: string) => amount ? (
-        <Tag color="green" style={{ borderRadius: 16 }}>रु {parseFloat(amount).toLocaleString()}</Tag>
-      ) : <Text type="secondary">—</Text>,
+      render: (amount: string) => (
+        amount ? (
+          <Tag color="green" style={{ borderRadius: 16 }}>रु {parseFloat(amount).toLocaleString()}</Tag>
+        ) : <Text type="secondary">—</Text>
+      ),
     },
     {
       title: 'Status',
@@ -731,14 +795,9 @@ const loadRequestDetails = async (requestId: string) => {
       key: 'status',
       width: 120,
       render: (status: string) => {
-        const config: Record<string, { color: string; label: string; icon: any }> = {
-          pending: { color: 'orange', label: 'Pending', icon: <ClockCircleOutlined /> },
-          assigned: { color: 'blue', label: 'Assigned', icon: <CheckCircleOutlined /> },
-          completed: { color: 'green', label: 'Completed', icon: <CheckCircleOutlined /> },
-          canceled: { color: 'red', label: 'Canceled', icon: <CloseOutlined /> },
-        };
-        const { color, label, icon } = config[status] || { color: 'default', label: status, icon: null };
-        return <Tag color={color} icon={icon} style={{ borderRadius: 16 }}>{label}</Tag>;
+        const color = getStatusColor(status);
+        const label = getStatusLabel(status);
+        return <Tag color={color} style={{ borderRadius: 16 }}>{label}</Tag>;
       },
     },
     {
@@ -752,7 +811,7 @@ const loadRequestDetails = async (requestId: string) => {
       title: 'Actions',
       key: 'actions',
       width: 80,
-      render: (_: any, record: AssignedRequest) => (
+      render: (_: any, record: any) => (
         <Tooltip title="View Details">
           <Button
             icon={<EyeOutlined />}
@@ -782,7 +841,7 @@ const loadRequestDetails = async (requestId: string) => {
           loading={loading}
           pagination={{ pageSize: 10, showTotal: (total) => `Total ${total} requests` }}
           scroll={{ x: 1200 }}
-          locale={{ emptyText: 'No pending requests found' }}
+          locale={{ emptyText: 'No pending service requests' }}
         />
       ),
     },
@@ -819,11 +878,14 @@ const loadRequestDetails = async (requestId: string) => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
             <Title level={3} style={{ margin: 0 }}>Service Request Management</Title>
-            <Text type="secondary">Review and assign service requests to available mistris based on their skills</Text>
+            <Text type="secondary">Review and assign service requests to available mistris</Text>
           </div>
           <Button icon={<ReloadOutlined />} onClick={() => {
-            if (activeTab === 'pending') loadPendingRequests();
-            else loadAllRequests();
+            if (activeTab === 'pending') {
+              loadPendingRequests();
+            } else {
+              loadAllRequests();
+            }
             loadWorkerStats();
           }}>
             Refresh
@@ -853,10 +915,12 @@ const loadRequestDetails = async (requestId: string) => {
         }
         open={assignModalVisible}
         onOk={confirmAssign}
-        onCancel={() => setAssignModalVisible(false)}
+        onCancel={() => {
+          setAssignModalVisible(false);
+        }}
         confirmLoading={assigning}
         width={800}
-        okText="Assign Request"
+        okText="Assign"
         cancelText="Cancel"
       >
         {selectedRequest ? (
@@ -864,9 +928,11 @@ const loadRequestDetails = async (requestId: string) => {
             <div style={{ marginBottom: 24 }}>
               <div style={{ background: token.colorPrimaryBg, padding: '12px 16px', borderRadius: 12, marginBottom: 16 }}>
                 <Text strong>Request Details</Text>
-                <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
-                  Service: {getServiceDisplayName(selectedRequest.type)}
-                </Text>
+                {selectedRequest && (
+                  <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
+                    Service: {getServiceDisplayName(selectedRequest.type)}
+                  </Text>
+                )}
               </div>
 
               {loadingDetails ? (
@@ -898,67 +964,6 @@ const loadRequestDetails = async (requestId: string) => {
                       {new Date(selectedRequest.createdAt).toLocaleString()}
                     </Descriptions.Item>
                   </Descriptions>
-
-                  {/* Selected Services with Price Breakdown */}
-                  {requestDetails?.platformServices && requestDetails.platformServices.length > 0 ? (
-                    <div style={{ marginTop: 12, marginBottom: 16 }}>
-                      <Text strong>Selected Services:</Text>
-                      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {requestDetails.platformServices.map((service) => (
-                          <div key={service.id} style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '8px 12px',
-                            background: '#f8fafc',
-                            borderRadius: 8,
-                            border: '1px solid #e8edf2'
-                          }}>
-                            <Text>{service.name}</Text>
-                            <Text strong style={{ color: '#e67e22' }}>
-                              रु {parseFloat(service.price).toLocaleString()}
-                            </Text>
-                          </div>
-                        ))}
-                        <div style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '10px 12px',
-                          background: token.colorPrimaryBg,
-                          borderRadius: 8,
-                          border: `1px solid ${token.colorPrimary}40`,
-                          marginTop: 4
-                        }}>
-                          <Text strong>Total Amount</Text>
-                          <Text strong style={{ color: token.colorPrimary, fontSize: 18 }}>
-                            रु {paymentAmount.toLocaleString()}
-                          </Text>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ marginTop: 12, marginBottom: 16 }}>
-                      <Alert
-                        message="No Services Selected"
-                        description="This request doesn't have any platform services selected. Please enter the amount manually."
-                        type="info"
-                        showIcon
-                        style={{ borderRadius: 8 }}
-                      />
-                    </div>
-                  )}
-
-                  {/* Show warning if no matching mistris available */}
-                  {filteredMistris.length === 0 && allMistris.length > 0 && (
-                    <Alert
-                      message="No matching mistris found"
-                      description={`No ${getServiceDisplayName(selectedRequest.type)} mistris are currently available for assignment.`}
-                      type="warning"
-                      showIcon
-                      style={{ marginTop: 16, borderRadius: 8 }}
-                    />
-                  )}
                 </>
               )}
             </div>
@@ -967,26 +972,25 @@ const loadRequestDetails = async (requestId: string) => {
               <div style={{ background: token.colorPrimaryBg, padding: '12px 16px', borderRadius: 12, marginBottom: 16 }}>
                 <Text strong>Assignment Details</Text>
                 <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
-                  Showing only {getServiceDisplayName(selectedRequest.type)} professionals ({filteredMistris.length} available)
+                  {selectedRequest 
+                    ? `Showing only ${getServiceDisplayName(selectedRequest.type)} professionals (${filteredMistris.length} available)`
+                    : `Showing available professionals (${filteredMistris.length} available)`
+                  }
                 </Text>
               </div>
 
               <div style={{ marginBottom: 16 }}>
                 <Text strong>Select Mistri</Text>
                 <Select
-                  placeholder={`Choose a ${getServiceDisplayName(selectedRequest.type)} mistri to assign`}
+                  placeholder="Choose a mistri to assign"
                   style={{ width: '100%', marginTop: 8 }}
                   value={selectedMistri}
                   onChange={setSelectedMistri}
                   showSearch
                   size="large"
-                  notFoundContent={
-                    filteredMistris.length === 0
-                      ? `No ${getServiceDisplayName(selectedRequest.type)} mistris available`
-                      : 'No mistris found'
-                  }
+                  notFoundContent={filteredMistris.length === 0 ? 'No mistris available for this category' : 'No mistris found'}
                 >
-                  {filteredMistris.map(mistri => (
+                  {filteredMistris.map((mistri) => (
                     <Select.Option key={mistri.id} value={mistri.id}>
                       <Space direction="vertical" size={0} style={{ width: '100%' }}>
                         <Space>
@@ -997,7 +1001,7 @@ const loadRequestDetails = async (requestId: string) => {
                           <Tag color={mistri.isAvailable ? 'success' : 'warning'} style={{ borderRadius: 12 }}>
                             {mistri.isAvailable ? '🟢 Available' : '🔴 Busy'}
                           </Tag>
-                          {mistri.averageRating && (
+                          {mistri.averageRating && parseFloat(mistri.averageRating) > 0 && (
                             <Tag color="gold" style={{ borderRadius: 12 }}>
                               ⭐ {mistri.averageRating}
                             </Tag>
@@ -1009,7 +1013,7 @@ const loadRequestDetails = async (requestId: string) => {
                           )}
                         </Space>
                         <Text type="secondary" style={{ fontSize: 11, marginLeft: 36 }}>
-                          {mistri.serviceName || getServiceDisplayName(selectedRequest.type)} •
+                          {mistri.serviceName || 'General'} •
                           {mistri.jobsCompleted !== null && ` ${mistri.jobsCompleted} jobs completed`}
                         </Text>
                       </Space>
@@ -1018,7 +1022,6 @@ const loadRequestDetails = async (requestId: string) => {
                 </Select>
               </div>
 
-              {/* Payment Amount - Pre-filled from platform services */}
               <div style={{ marginBottom: 16 }}>
                 <Text strong>Set Payment Amount (NPR)</Text>
                 <InputNumber
@@ -1090,7 +1093,7 @@ const loadRequestDetails = async (requestId: string) => {
         />
       </Modal>
 
-      {/* View Request Details Modal */}
+      {/* View Details Modal */}
       <Modal
         title={
           <Space>
@@ -1109,7 +1112,7 @@ const loadRequestDetails = async (requestId: string) => {
             Close
           </Button>
         ]}
-        width={600}
+        width={800}
       >
         {selectedAssignedRequest && (
           <>
@@ -1135,12 +1138,8 @@ const loadRequestDetails = async (requestId: string) => {
                 ) : <Text type="secondary">Not set</Text>}
               </Descriptions.Item>
               <Descriptions.Item label="Status">
-                <Tag color={
-                  selectedAssignedRequest.status === 'assigned' ? 'blue' :
-                    selectedAssignedRequest.status === 'completed' ? 'green' :
-                      selectedAssignedRequest.status === 'canceled' ? 'red' : 'orange'
-                }>
-                  {selectedAssignedRequest.status}
+                <Tag color={getStatusColor(selectedAssignedRequest.status)}>
+                  {getStatusLabel(selectedAssignedRequest.status)}
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="Created At">

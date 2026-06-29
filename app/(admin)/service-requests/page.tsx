@@ -41,7 +41,7 @@ export default function ServiceRequestsPage() {
     useCallback(() => {
       const p = new URLSearchParams({ page: String(page), limit: '20' });
       if (status) p.set('status', status);
-      return `/api/admin/service-requests?${p.toString()}`;
+      return `admin/service-requests?${p.toString()}`;
     }, [status, page]),
     api.get
   );

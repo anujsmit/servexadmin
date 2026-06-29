@@ -1,17 +1,99 @@
+/* app/admin/ratings/ratings.module.css */
+
+.container {
+  padding: 24px;
+  background: #f5f7fa;
+  min-height: 100vh;
+}
+
 .header {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: var(--space-5);
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 16px 24px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.headerActions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.statsBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: white;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.statItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statValue {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.statLabel {
+  font-size: 14px;
+  color: #8c8c8c;
 }
 
 .pendingAlert {
-  margin-bottom: var(--space-4);
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .table {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  background: white;
+  border-radius: 12px;
   overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.pendingRow {
+  background: #fef9e7 !important;
+}
+
+.pendingRow:hover {
+  background: #fef3c7 !important;
+}
+
+.detailContent {
+  padding: 8px 0;
+}
+
+.detailRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.detailRow:last-child {
+  border-bottom: none;
+}
+
+.detailRow > :first-child {
+  min-width: 100px;
+  font-weight: 600;
 }

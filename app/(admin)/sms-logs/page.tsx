@@ -62,7 +62,7 @@ export default function SmsLogsPage() {
   const { data: statsData, isLoading: statsLoading } = useSWR<{
     success: boolean;
     stats: SmsStats;
-  }>('/api/admin/sms-stats', api.get);
+  }>('/admin/sms-stats', api.get);
 
   const { data, isLoading } = useSWR<{
     success: boolean;
@@ -77,7 +77,7 @@ export default function SmsLogsPage() {
         p.set('from', dateRange[0]);
         p.set('to', dateRange[1]);
       }
-      return `/api/admin/sms-logs?${p.toString()}`;
+      return `/admin/sms-logs?${p.toString()}`;
     }, [typeFilter, statusFilter, dateRange, page]),
     api.get
   );

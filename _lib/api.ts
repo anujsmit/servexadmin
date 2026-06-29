@@ -1,8 +1,8 @@
-// app/_lib/api.ts
+// app/admin/_lib/api.ts
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
-// Helper to get auth token
+// ✅ FIXED: Get auth token
 const getAuthToken = () => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('admin_token');
@@ -30,6 +30,21 @@ const parseResponseData = (res: any) => {
   return res;
 };
 
+/**
+ * Custom API Error class that preserves the response data
+ */
+class ApiError extends Error {
+  public status: number;
+  public data?: any;
+
+  constructor(status: number, message: string, data?: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
 export const api = {
   get: async <T>(url: string, requiresAuth: boolean = true): Promise<T> => {
     const headers: Record<string, string> = {
@@ -40,6 +55,7 @@ export const api = {
       const token = getAuthToken();
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+        console.log(`🔑 API GET ${url} - Authorization header set`);
       } else {
         console.warn('No auth token found for API request:', url);
       }
@@ -52,17 +68,29 @@ export const api = {
     });
 
     if (response.status === 401) {
+      console.log('🔑 Token expired or invalid, redirecting to login');
       // Token expired or invalid, clear credentials and redirect to login
       if (typeof window !== 'undefined') {
         localStorage.removeItem('admin_token');
         localStorage.removeItem('admin_user');
         window.location.href = '/login';
       }
-      throw new Error('Authentication required');
+      throw new ApiError(401, 'Authentication required');
     }
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
+      let errorMessage = `API Error: ${response.status}`;
+      let errorData = null;
+      try {
+        const json = await response.json();
+        if (json?.message) {
+          errorMessage = json.message;
+        }
+        errorData = json;
+      } catch {
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new ApiError(response.status, errorMessage, errorData);
     }
     
     const json = await response.json();
@@ -78,6 +106,9 @@ export const api = {
       const token = getAuthToken();
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+        console.log(`🔑 API POST ${url} - Authorization header set`);
+      } else {
+        console.warn('No auth token found for API request:', url);
       }
     }
     
@@ -89,16 +120,28 @@ export const api = {
     });
 
     if (response.status === 401) {
+      console.log('🔑 Token expired or invalid, redirecting to login');
       if (typeof window !== 'undefined') {
         localStorage.removeItem('admin_token');
         localStorage.removeItem('admin_user');
         window.location.href = '/login';
       }
-      throw new Error('Authentication required');
+      throw new ApiError(401, 'Authentication required');
     }
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
+      let errorMessage = `API Error: ${response.status}`;
+      let errorData = null;
+      try {
+        const json = await response.json();
+        if (json?.message) {
+          errorMessage = json.message;
+        }
+        errorData = json;
+      } catch {
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new ApiError(response.status, errorMessage, errorData);
     }
     
     const json = await response.json();
@@ -125,16 +168,28 @@ export const api = {
     });
 
     if (response.status === 401) {
+      console.log('🔑 Token expired or invalid, redirecting to login');
       if (typeof window !== 'undefined') {
         localStorage.removeItem('admin_token');
         localStorage.removeItem('admin_user');
         window.location.href = '/login';
       }
-      throw new Error('Authentication required');
+      throw new ApiError(401, 'Authentication required');
     }
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
+      let errorMessage = `API Error: ${response.status}`;
+      let errorData = null;
+      try {
+        const json = await response.json();
+        if (json?.message) {
+          errorMessage = json.message;
+        }
+        errorData = json;
+      } catch {
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new ApiError(response.status, errorMessage, errorData);
     }
     
     const json = await response.json();
@@ -160,19 +215,34 @@ export const api = {
     });
 
     if (response.status === 401) {
+      console.log('🔑 Token expired or invalid, redirecting to login');
       if (typeof window !== 'undefined') {
         localStorage.removeItem('admin_token');
         localStorage.removeItem('admin_user');
         window.location.href = '/login';
       }
-      throw new Error('Authentication required');
+      throw new ApiError(401, 'Authentication required');
     }
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
+      let errorMessage = `API Error: ${response.status}`;
+      let errorData = null;
+      try {
+        const json = await response.json();
+        if (json?.message) {
+          errorMessage = json.message;
+        }
+        errorData = json;
+      } catch {
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new ApiError(response.status, errorMessage, errorData);
     }
     
     const json = await response.json();
     return parseResponseData(json);
   },
 };
+
+// Export the ApiError class for use in components
+export { ApiError };
