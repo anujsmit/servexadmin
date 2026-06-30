@@ -1,8 +1,6 @@
 // app/admin/_lib/api.ts
 
-// ✅ FIX: Remove /api from the base URL (it's added in the fetch path)
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-// NOT: 'http://localhost:5000/api'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 // ✅ FIXED: Get auth token
 const getAuthToken = () => {
@@ -63,20 +61,15 @@ export const api = {
       }
     }
     
-    // ✅ Build URL correctly - url already includes /api/
-    const fullUrl = `${API_BASE}${url}`;
-    console.log(`🌐 GET: ${fullUrl}`);
-    
-    const response = await fetch(fullUrl, {
+    const response = await fetch(`${API_BASE}${url}`, {
       method: 'GET',
       credentials: 'include',
       headers,
     });
 
-    console.log(`📥 Response status: ${response.status}`);
-
     if (response.status === 401) {
       console.log('🔑 Token expired or invalid, redirecting to login');
+      // Token expired or invalid, clear credentials and redirect to login
       if (typeof window !== 'undefined') {
         localStorage.removeItem('admin_token');
         localStorage.removeItem('admin_user');
@@ -119,17 +112,12 @@ export const api = {
       }
     }
     
-    const fullUrl = `${API_BASE}${url}`;
-    console.log(`🌐 POST: ${fullUrl}`);
-    
-    const response = await fetch(fullUrl, {
+    const response = await fetch(`${API_BASE}${url}`, {
       method: 'POST',
       headers,
       body: data ? JSON.stringify(data) : undefined,
       credentials: 'include',
     });
-
-    console.log(`📥 Response status: ${response.status}`);
 
     if (response.status === 401) {
       console.log('🔑 Token expired or invalid, redirecting to login');
@@ -172,9 +160,7 @@ export const api = {
       }
     }
     
-    const fullUrl = `${API_BASE}${url}`;
-    
-    const response = await fetch(fullUrl, {
+    const response = await fetch(`${API_BASE}${url}`, {
       method: 'PATCH',
       headers,
       body: data ? JSON.stringify(data) : undefined,
@@ -222,9 +208,7 @@ export const api = {
       }
     }
     
-    const fullUrl = `${API_BASE}${url}`;
-    
-    const response = await fetch(fullUrl, {
+    const response = await fetch(`${API_BASE}${url}`, {
       method: 'DELETE',
       credentials: 'include',
       headers,

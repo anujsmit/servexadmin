@@ -1,8 +1,6 @@
 // app/admin/_lib/auth.ts
 
-// ✅ FIX: Remove /api from the base URL
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-// NOT: 'http://localhost:5000/api'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 export interface AdminLoginResponse {
   success: boolean;
@@ -17,14 +15,13 @@ export interface AdminLoginResponse {
     permissions: string[];
   };
   token?: string;
-  accessToken?: string;
   refreshToken?: string;
   backupCodes?: string[];
 }
 
+// ✅ FIXED: Store token properly and return it
 export async function adminLoginWithPassword(phone: string, password: string, twoFactorToken?: string, backupCode?: string) {
-  // ✅ Add /api prefix in the URL path
-  const response = await fetch(`${API_BASE}/api/admin/auth/login-with-password`, {
+  const response = await fetch(`${API_BASE}/admin/auth/login-with-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone, password, twoFactorToken, backupCode }),
@@ -39,9 +36,8 @@ export async function adminLoginWithPassword(phone: string, password: string, tw
   }
   
   // ✅ Store token in localStorage
-  const token = data.accessToken || data.token;
-  if (token) {
-    localStorage.setItem('admin_token', token);
+  if (data.accessToken) {
+    localStorage.setItem('admin_token', data.accessToken);
     console.log('✅ Token stored in localStorage');
   }
   
@@ -56,11 +52,12 @@ export async function adminLoginWithPassword(phone: string, password: string, tw
   return data;
 }
 
+// ✅ FIXED: Check if admin has 2FA enabled
 export const checkAdminTwoFactorStatus = async (phone: string): Promise<{ twoFactorEnabled: boolean }> => {
   try {
     console.log('Checking 2FA status for:', phone);
     
-    const response = await fetch(`${API_BASE}/api/admin/auth/check-two-factor-status`, {
+    const response = await fetch(`${API_BASE}/admin/auth/check-two-factor-status`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -82,61 +79,46 @@ export const checkAdminTwoFactorStatus = async (phone: string): Promise<{ twoFac
   }
 };
 
+// ✅ FIXED: Get current admin user with token
 export const getCurrentAdmin = async (): Promise<any> => {
   try {
     const token = localStorage.getItem('admin_token');
-    console.log('🔍 Getting current admin, token exists:', !!token);
+    console.log('Getting current admin, token exists:', !!token);
     
     if (!token) {
-      console.log('❌ No token found, user not authenticated');
+      console.log('No token found, user not authenticated');
       return null;
     }
     
-    // ✅ Add /api prefix in the URL path
-    const url = `${API_BASE}/api/admin/me`;
-    console.log('📤 Fetching admin from:', url);
-    console.log('📤 Token:', token.substring(0, 20) + '...');
-    
-    const response = await fetch(url, {
-      method: 'GET',
+    const response = await fetch(`${API_BASE}/admin/me`, {
       credentials: 'include',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
       },
     });
 
-    console.log(`📥 Response status: ${response.status}`);
-    console.log(`📥 Response ok: ${response.ok}`);
-    
-    if (response.status === 401) {
-      console.log('🔑 Token expired, clearing session');
-      await adminLogout();
-      return null;
-    }
-
     if (!response.ok) {
-      console.error('❌ Failed to fetch admin:', response.status);
-      const text = await response.text();
-      console.error('❌ Response body:', text);
+      if (response.status === 401) {
+        console.log('Token expired, clearing session');
+        await adminLogout();
+      }
       return null;
     }
 
-    const data = await response.json();
-    console.log('✅ Admin data received:', data);
-    return data;
+    return await response.json();
   } catch (error) {
-    console.error('❌ Error getting current admin:', error);
+    console.error('Error getting current admin:', error);
     return null;
   }
 };
 
+// ✅ FIXED: Admin logout with token
 export const adminLogout = async (): Promise<void> => {
   try {
     const token = localStorage.getItem('admin_token');
     if (token) {
-      await fetch(`${API_BASE}/api/admin/auth/logout`, {
+      await fetch(`${API_BASE}/admin/auth/logout`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -148,6 +130,7 @@ export const adminLogout = async (): Promise<void> => {
   } catch (error) {
     console.error('Logout error:', error);
   } finally {
+    // Always clear local storage
     localStorage.removeItem('admin_user');
     localStorage.removeItem('admin_token');
     localStorage.removeItem('admin_refresh_token');
@@ -155,8 +138,10 @@ export const adminLogout = async (): Promise<void> => {
   }
 };
 
+// Clear session (alias for adminLogout)
 export const clearSession = adminLogout;
 
+// ✅ FIXED: Check session validity
 export const checkSession = async (): Promise<{
   authenticated: boolean;
   user?: any;
@@ -164,12 +149,14 @@ export const checkSession = async (): Promise<{
   try {
     const token = localStorage.getItem('admin_token');
     
+    // If no token, session is not authenticated
     if (!token) {
       console.log('No admin token found, session not authenticated');
       return { authenticated: false };
     }
 
-    const response = await fetch(`${API_BASE}/api/admin/me`, {
+    // Verify token with the server
+    const response = await fetch(`${API_BASE}/admin/me`, {
       credentials: 'include',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -198,11 +185,13 @@ export const checkSession = async (): Promise<{
   }
 };
 
+// ✅ FIXED: Get auth token
 export const getAuthToken = (): string | null => {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('admin_token');
 };
 
+// ✅ FIXED: Check if authenticated
 export const isAuthenticated = (): boolean => {
   if (typeof window === 'undefined') return false;
   return !!localStorage.getItem('admin_token');

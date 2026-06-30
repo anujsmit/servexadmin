@@ -1,23 +1,30 @@
-// app/_lib/mistris-counts.ts
-export const MISTRIS_COUNTS_GLOBAL_KEY = '/admin/mistris/counts';
+// _lib/mistris-counts.ts
 
-/** Key for counts scoped by search (mistris table tabs). */
-export function mistriCountsKey(search: string): string {
-  const q = search.trim();
-  return q ? `/admin/mistris/counts?search=${encodeURIComponent(q)}` : MISTRIS_COUNTS_GLOBAL_KEY;
+import { api } from './api';
+
+export interface MistriCounts {
+  all: number;
+  pending: number;
+  approved: number;
+  rejected: number;
 }
 
-/** Invalidate every mistri counts query (after approve / reject / etc.). */
-export function mistriCountsMatcher(key: unknown): boolean {
-  return typeof key === 'string' && key.startsWith('/admin/mistris/counts');
-}
-
-export type MistriCountsPayload = {
+export interface MistriCountsPayload {
   success: boolean;
-  counts: {
-    all: number;
-    pending: number;
-    approved: number;
-    rejected: number;
-  };
-};
+  counts: MistriCounts;
+}
+
+export function mistriCountsKey(search?: string): string {
+  const base = '/admin/mistris/counts';
+  if (search) {
+    return `${base}?search=${encodeURIComponent(search)}`;
+  }
+  return base;
+}
+
+export const mistriCountsMatcher = /^\/admin\/mistris\/counts(\?.*)?$/;
+
+export async function fetchMistriCounts(search?: string): Promise<MistriCounts> {
+  const response = await api.get<MistriCountsPayload>(mistriCountsKey(search));
+  return response.counts;
+}
